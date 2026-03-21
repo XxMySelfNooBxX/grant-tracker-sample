@@ -1,0 +1,489 @@
+/* ============================================================
+   LAYOUT GRIDS
+   ============================================================ */
+.dashboard-grid { display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+.summary-row     { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-bottom: 24px; }
+.summary-row-4   { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-bottom: 24px; }
+.chart-container, .pie-container { height: 380px; }
+
+/* ============================================================
+   STAT CARDS — 3D TILT + FLOATING NUMBERS + COLOR GLOW
+   ============================================================ */
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+  /* overflow must stay visible so translateZ(50px) pops out */
+  overflow: visible;
+  cursor: pointer;
+  transition: box-shadow 0.3s ease;
+}
+
+/* Color-matched glow per card — driven by inline borderBottom color */
+.stat-card:hover {
+  /* JS sets --card-accent via style; fallback to blue */
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.06),
+    0 24px 60px -12px rgba(0,0,0,0.6),
+    0 0 40px color-mix(in srgb, var(--card-accent, var(--accent-blue)) 20%, transparent);
+}
+
+.stat-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 1.2px;
+  margin-bottom: 10px;
+}
+
+/* Large serif number — translateZ applied by TiltCard's inner div */
+.stat-value {
+  font-family: 'DM Serif Display', serif;
+  font-size: 44px;
+  font-weight: 400;
+  line-height: 1;
+  /* text-shadow set inline per card color */
+}
+
+.stat-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  font-weight: 500;
+}
+
+.no-data {
+  display: flex; height: 100%;
+  align-items: center; justify-content: center;
+  color: var(--text-muted); font-style: italic; font-size: 15px;
+}
+
+/* ============================================================
+   REGISTRY LIST
+   ============================================================ */
+.history-list {
+  position: relative;
+  list-style: none;
+  padding: 0 4px 0 0;
+  margin: 0;
+  max-height: 560px;
+  overflow-y: auto;
+  overflow-x: hidden;  /* prevent horizontal scrollbar */
+}
+
+.history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 12px 18px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  gap: 14px;
+  position: relative;
+  /* left border — colored by status via JS inline style */
+  border-left: 3px solid transparent;
+  transition: background 0.2s ease, border-left-color 0.2s ease;
+}
+.history-item:last-child { border-bottom: none; }
+
+/* Sweep shimmer on hover */
+.history-item::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(79,156,249,0.04) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  transition: transform 0.5s ease;
+  pointer-events: none;
+  border-radius: inherit;
+}
+.history-item:hover::after { transform: translateX(100%); }
+.history-item:hover { background: rgba(79,156,249,0.025); }
+
+/* ── Disbursal progress bar ── */
+.disbursal-track {
+  height: 5px;
+  background: var(--bg-elevated);
+  border-radius: 4px;
+  overflow: visible; /* allow glow */
+  margin-top: 8px;
+}
+
+.disbursal-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
+  transition: width 0.6s ease;
+  position: relative;
+}
+
+/* Glow on bar tip */
+.disbursal-fill::after {
+  content: '';
+  position: absolute;
+  right: -2px; top: -3px;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  box-shadow: 0 0 8px 3px rgba(79,156,249,0.5);
+  opacity: 0.8;
+}
+
+/* Full disbursal — pulse the bar */
+.disbursal-fill.full {
+  background: linear-gradient(90deg, var(--accent-green), #34d399);
+  animation: disbursalPulse 2.5s ease-in-out infinite;
+}
+.disbursal-fill.full::after {
+  background: var(--accent-green);
+  box-shadow: 0 0 8px 3px rgba(16,185,129,0.5);
+}
+
+@keyframes disbursalPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0);   }
+  50%       { box-shadow: 0 0 12px 3px rgba(16,185,129,0.25); }
+}
+
+/* ============================================================
+   TABLES (Audit log etc.)
+   ============================================================ */
+.table-header {
+  padding: 14px 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.table-row { border-bottom: 1px solid var(--border-subtle); transition: background 0.15s; }
+.table-row:hover { background: var(--bg-elevated); }
+
+/* ============================================================
+   CATEGORY TAGS
+   ============================================================ */
+.category-tag {
+  font-size: 10px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+/* Coloured category tags */
+.cat-Research  { background: rgba(59,130,246,0.15);  color: #60a5fa; border: 1px solid rgba(59,130,246,0.25);  }
+.cat-Travel    { background: rgba(245,158,11,0.15);  color: #fbbf24; border: 1px solid rgba(245,158,11,0.25);  }
+.cat-Equipment { background: rgba(6,182,212,0.15);   color: #22d3ee; border: 1px solid rgba(6,182,212,0.25);   }
+.cat-Stipend   { background: rgba(239,68,68,0.12);   color: #f87171; border: 1px solid rgba(239,68,68,0.2);    }
+.cat-Other     { background: rgba(139,92,246,0.15);  color: #a78bfa; border: 1px solid rgba(139,92,246,0.25);  }
+
+/* ============================================================
+   STATUS BADGES
+   ============================================================ */
+.status-badge {
+  padding: 4px 11px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  flex-shrink: 0;
+}
+.status-Pending  { background: rgba(245,158,11,0.12);  color: #fbbf24; border: 1px solid rgba(245,158,11,0.25);  }
+.status-Approved { background: rgba(16,185,129,0.12);  color: #34d399; border: 1px solid rgba(16,185,129,0.25);  }
+.status-Rejected { background: rgba(239,68,68,0.12);   color: #f87171; border: 1px solid rgba(239,68,68,0.25);   }
+
+/* ============================================================
+   RISK BADGE
+   ============================================================ */
+.risk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 11px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.risk-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: riskDotPulse 2.5s ease-in-out infinite;
+}
+@keyframes riskDotPulse {
+  0%, 100% { transform: scale(1);   opacity: 1; }
+  50%       { transform: scale(1.4); opacity: 0.7; }
+}
+
+/* ============================================================
+   FILTER PILLS
+   ============================================================ */
+.filter-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.filter-pill {
+  border-radius: var(--radius-pill);
+  padding: 5px 15px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-family: 'DM Sans', sans-serif;
+}
+.filter-pill:hover { color: var(--text-primary); border-color: var(--text-muted); background: var(--bg-elevated); }
+
+/* ============================================================
+   BULK ACTION BAR
+   ============================================================ */
+.bulk-bar {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%) translateY(140px);
+  opacity: 0;
+  pointer-events: none;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-top: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 14px 22px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: var(--shadow-modal), 0 0 0 1px rgba(79,156,249,0.1);
+  z-index: 500;
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  white-space: nowrap;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+.bulk-bar.visible { transform: translateX(-50%) translateY(0); opacity: 1; pointer-events: auto; }
+.bulk-bar-count {
+  font-family: 'DM Serif Display', serif;
+  font-size: 24px;
+  color: var(--accent-blue);
+  min-width: 28px;
+}
+.bulk-bar-label { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.bulk-divider { width: 1px; height: 24px; background: var(--border-subtle); flex-shrink: 0; }
+.bulk-check {
+  width: 17px; height: 17px;
+  accent-color: var(--accent-blue);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   ACTION QUEUE CARDS — URGENCY SYSTEM
+   ============================================================ */
+
+/* Urgency gradient backgrounds */
+.queue-card-urgent {
+  background: linear-gradient(
+    135deg,
+    rgba(239,68,68,0.07) 0%,
+    transparent 55%
+  ) !important;
+}
+.queue-card-warning {
+  background: linear-gradient(
+    135deg,
+    rgba(245,158,11,0.06) 0%,
+    transparent 55%
+  ) !important;
+}
+.queue-card-forensic {
+  background: linear-gradient(
+    135deg,
+    rgba(185,28,28,0.12) 0%,
+    rgba(239,68,68,0.06) 40%,
+    transparent 70%
+  ) !important;
+}
+
+/* Large watermark waiting days number */
+.queue-wait-watermark {
+  position: absolute;
+  top: 50%;
+  right: 20px;
+  transform: translateY(-50%);
+  font-family: 'DM Serif Display', serif;
+  font-size: 88px;
+  font-weight: 400;
+  line-height: 1;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(255,255,255,0.06);
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+  letter-spacing: -4px;
+}
+.queue-wait-watermark.urgent {
+  -webkit-text-stroke: 1px rgba(239,68,68,0.12);
+}
+
+/* Forensic flag pulse animation */
+.forensic-alert {
+  animation: forensicPulse 1.8s ease-in-out infinite;
+}
+@keyframes forensicPulse {
+  0%, 100% {
+    background: rgba(185,28,28,0.15);
+    box-shadow: 0 0 0 0 rgba(239,68,68,0);
+    border-color: rgba(239,68,68,0.4);
+  }
+  50% {
+    background: rgba(239,68,68,0.22);
+    box-shadow: 0 0 12px 4px rgba(239,68,68,0.15);
+    border-color: rgba(239,68,68,0.7);
+  }
+}
+
+/* Queue card left border pulse for forensic */
+.queue-border-forensic {
+  animation: borderFraudPulse 2s ease-in-out infinite;
+}
+@keyframes borderFraudPulse {
+  0%, 100% { border-left-color: #ef4444; }
+  50%       { border-left-color: #b91c1c; }
+}
+
+/* ============================================================
+   AUDIT LOG MODAL — TRACING BEAM IMPROVEMENTS
+   ============================================================ */
+.timeline-beam-container { position: relative; }
+
+.timeline-beam {
+  position: absolute;
+  left: 20px;
+  top: 0; bottom: 0;
+  width: 2px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    var(--border-subtle) 5%,
+    var(--border-subtle) 95%,
+    transparent 100%
+  );
+  z-index: 0;
+}
+
+/* Brighter, taller glow beam */
+.timeline-beam-glow {
+  position: absolute;
+  left: 18px;
+  width: 6px;
+  height: 120px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(79,156,249,0) 5%,
+    #3b82f6 35%,
+    #6366f1 65%,
+    rgba(99,102,241,0) 95%,
+    transparent 100%
+  );
+  border-radius: 6px;
+  box-shadow: 0 0 12px 3px rgba(79,156,249,0.35);
+  animation: beamDrop 6s infinite ease-in-out;
+  z-index: 1;
+}
+
+@keyframes beamDrop {
+  0%   { top: 0%;                    opacity: 0; }
+  8%   { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { top: calc(100% - 120px);    opacity: 0; }
+}
+
+/* Log row entrance — applied via Framer in JS */
+.log-row-enter {
+  animation: logRowEnter 0.35s ease-out both;
+}
+@keyframes logRowEnter {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ============================================================
+   ACETERNITY: MOVING BORDER (FIXED FOR CORNERS)
+   ============================================================ */
+.moving-border-wrapper {
+  position: relative;
+  padding: 2px;
+  border-radius: 16px;
+  overflow: hidden;
+}
+.moving-border-bg {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 300%; height: 300%;
+  animation: spin-border 5s linear infinite;
+  z-index: 0;
+}
+.moving-border-content {
+  position: relative;
+  background: var(--bg-surface);
+  border-radius: 14px;
+  height: 100%;
+  z-index: 1;
+}
+@keyframes spin-border {
+  0%   { transform: translate(-50%, -50%) rotate(0deg);   }
+  100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* ============================================================
+   SVG TRACING BORDER (OTP modal)
+   ============================================================ */
+.svg-border-trace { animation: svg-trace 4s linear infinite; }
+@keyframes svg-trace {
+  from { stroke-dashoffset: 100; }
+  to   { stroke-dashoffset: 0;   }
+}
+
+/* ============================================================
+   CYBER TOOLTIP
+   ============================================================ */
+.cyber-tooltip {
+  background: rgba(9, 9, 15, 0.9);
+  border: 1px solid rgba(79,156,249,0.35);
+  color: var(--text-primary);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'DM Sans', sans-serif;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 12px rgba(79,156,249,0.15);
+  backdrop-filter: blur(16px);
+  white-space: nowrap;
+}
+body.light-mode .cyber-tooltip {
+  background: rgba(255,255,255,0.95);
+  border-color: rgba(37,99,235,0.25);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 900px) {
+  .dashboard-grid, .summary-row, .summary-row-4 { grid-template-columns: 1fr 1fr; }
+  .queue-wait-watermark { font-size: 60px; }
+}
+@media (max-width: 640px) {
+  .dashboard-grid, .summary-row, .summary-row-4 { grid-template-columns: 1fr; }
+  .history-item { flex-direction: column; align-items: flex-start; }
+  .bulk-bar { width: calc(100% - 28px); flex-wrap: wrap; justify-content: center; bottom: 14px; }
+  .queue-wait-watermark { display: none; }
+}

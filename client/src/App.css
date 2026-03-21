@@ -1,0 +1,230 @@
+/* ============================================================
+   FONTS & RESET
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body, html {
+  margin: 0; padding: 0;
+  font-family: 'DM Sans', -apple-system, sans-serif;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================
+   SELECTION HIGHLIGHT FIX (Makes highlighted text readable)
+   ============================================================ */
+::selection {
+  background-color: var(--accent-blue);
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
+}
+
+.gradient-text::selection {
+  -webkit-text-fill-color: #ffffff;
+  background-color: var(--accent-blue);
+}
+
+/* ============================================================
+   GLOBAL VARIABLES — DARK MODE (High-Contrast Fintech)
+   ============================================================ */
+:root {
+  /* Surfaces - Solid and Distinct */
+  --bg-base:        #000000;
+  --bg-surface:     #09090b; 
+  --bg-elevated:    #18181b; 
+  --bg-overlay:     rgba(0, 0, 0, 0.85);
+  --bg-input:       #18181b; 
+  --bg-input-focus: #27272a;
+
+  /* Borders - Crisp and thin */
+  --border-subtle:  #27272a;
+  --border-top:     #3f3f46;
+  --border-focus:   #3b82f6;
+
+  /* Text - Maximum Legibility */
+  --text-primary:   #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted:     #94a3b8;
+  --text-heading:   #ffffff;
+
+  /* Accents */
+  --accent-blue:    #3b82f6;
+  --accent-green:   #10b981;
+  --accent-yellow:  #f59e0b;
+  --accent-red:     #ef4444;
+  --accent-purple:  #8b5cf6;
+  --accent-cyan:    #06b6d4;
+
+  /* Semantic Info Panels & Areas */
+  --bg-inset:          #18181b;
+  --bg-dashed:         rgba(255, 255, 255, 0.05);
+  --border-dashed:     #f59e0b;
+  --bg-info-panel:     rgba(59, 130, 246, 0.1);
+  --border-info-panel: rgba(59, 130, 246, 0.3);
+  --bg-warn-panel:     rgba(245, 158, 11, 0.1);
+  --border-warn-panel: rgba(245, 158, 11, 0.3);
+
+  /* Shadows */
+  --shadow-card:    0 4px 24px -4px rgba(0, 0, 0, 1);
+  --shadow-modal:   0 24px 64px rgba(0, 0, 0, 1);
+  --shadow-btn:     0 2px 8px rgba(0, 0, 0, 0.5);
+
+  /* Geometry & Animation */
+  --radius-card:    16px;
+  --radius-btn:     8px;
+  --radius-pill:    99px;
+  --transition:     0.15s ease-out;
+
+  /* Subtle Ambient Glow */
+  --glow-1: rgba(59, 130, 246, 0.1);
+  --glow-2: rgba(139, 92, 246, 0.1);
+  --glow-3: rgba(16, 185, 129, 0.08);
+}
+
+/* ============================================================
+   GLOBAL VARIABLES — LIGHT MODE (Clean & Crisp)
+   ============================================================ */
+body.light-mode {
+  --bg-base:        #f4f4f5;
+  --bg-surface:     #ffffff;
+  --bg-elevated:    #ffffff;
+  --bg-overlay:     rgba(255, 255, 255, 0.8);
+  --bg-input:       #ffffff;
+  --bg-input-focus: #ffffff;
+
+  --border-subtle:  #e4e4e7;
+  --border-top:     #f4f4f5;
+  --border-focus:   #2563eb;
+
+  --text-primary:   #0f172a;
+  --text-secondary: #475569;
+  --text-muted:     #64748b;
+  --text-heading:   #020617;
+
+  --bg-inset:          #f4f4f5;
+  --bg-dashed:         rgba(0, 0, 0, 0.02);
+  --border-dashed:     #d97706;
+  --bg-info-panel:     rgba(37, 99, 235, 0.05);
+  --border-info-panel: rgba(37, 99, 235, 0.2);
+  --bg-warn-panel:     rgba(217, 119, 6, 0.05);
+  --border-warn-panel: rgba(217, 119, 6, 0.2);
+
+  --shadow-card:    0 1px 3px rgba(0,0,0,0.05), 0 10px 24px -4px rgba(0,0,0,0.02);
+  --shadow-modal:   0 24px 60px rgba(0,0,0,0.1);
+  --shadow-btn:     0 2px 8px rgba(37, 99, 235, 0.2);
+
+  --glow-1: rgba(191, 219, 254, 0.4);
+  --glow-2: rgba(221, 214, 254, 0.4);
+  --glow-3: rgba(167, 243, 208, 0.3);
+}
+
+/* ============================================================
+   LAYOUT WRAPPERS & MESH
+   ============================================================ */
+.app-wrapper {
+  min-height: 100vh; background: var(--bg-base);
+  padding: 36px 20px 60px; position: relative; overflow-x: hidden;
+}
+.app-container { max-width: 1440px; width: 95%; margin: 0 auto; position: relative; z-index: 2; }
+
+.app-wrapper::before, .app-wrapper::after, .ambient-glow {
+  content: ''; position: fixed; border-radius: 50%; filter: blur(140px); pointer-events: none; z-index: 0;
+  animation: meshDrift 20s ease-in-out infinite alternate;
+}
+.app-wrapper::before { width: 55vw; height: 55vw; top: -15%; left: -10%; background: var(--glow-1); animation-duration: 25s; }
+.app-wrapper::after { width: 45vw; height: 45vw; bottom: -15%; right: -10%; background: var(--glow-2); animation-direction: alternate-reverse; }
+.ambient-glow.glow-1 { top: 40%; left: 30%; width: 40vw; height: 40vw; background: var(--glow-3); }
+
+@keyframes meshDrift {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(3vw, -3vh) scale(1.05); }
+  100% { transform: translate(-2vw, 2vh) scale(0.95); }
+}
+
+/* ============================================================
+   UNIVERSAL COMPONENTS (Cards, Inputs, Buttons)
+   ============================================================ */
+.glass-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-card); padding: 26px; box-shadow: var(--shadow-card); margin-bottom: 24px; animation: fadeIn 0.4s ease-out both; }
+.card-elevated { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-card); padding: 20px; }
+
+.gradient-text { margin: 0 0 6px 0; font-family: 'DM Serif Display', serif; font-size: 36px; color: var(--text-heading); letter-spacing: -0.5px; }
+.section-title { font-family: 'DM Serif Display', serif; font-size: 24px; color: var(--text-heading); margin: 0 0 20px 0; border-bottom: 1px solid var(--border-subtle); padding-bottom: 12px; }
+
+.input-label { display: block; font-size: 13px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+.dark-input { width: 100%; padding: 14px 18px; margin-bottom: 20px; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 16px; transition: all var(--transition); }
+.dark-input:focus { outline: none; border-color: var(--border-focus); box-shadow: 0 0 0 1px var(--border-focus); }
+.dark-input::placeholder { color: var(--text-muted); opacity: 0.7; }
+body.light-mode .dark-input { background: #ffffff; border: 1px solid #d4d4d8; box-shadow: 0 1px 2px rgba(0,0,0,0.05) inset; }
+body.light-mode .dark-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 1px var(--border-focus); }
+body.light-mode .dark-input option { color: #000; }
+
+.neon-btn { background: var(--text-primary); color: var(--bg-base); border: none; padding: 14px 24px; border-radius: var(--radius-btn); font-size: 15px; font-weight: 600; cursor: pointer; width: 100%; transition: all var(--transition); }
+.neon-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+.neon-btn.neon-green { background: var(--accent-green); color: white; width: auto; }
+.neon-btn.neon-blue { background: var(--accent-blue); color: white; width: auto; }
+.neon-btn.neon-red { background: var(--accent-red); color: white; width: auto; }
+
+.action-btn { border: none; cursor: pointer; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; transition: all var(--transition); }
+.btn-approve { background: rgba(16,185,129,0.1); color: var(--accent-green); border: 1px solid rgba(16,185,129,0.2); }
+.btn-approve:hover { background: var(--accent-green); color: white; }
+.btn-reject { background: rgba(239,68,68,0.1); color: var(--accent-red); border: 1px solid rgba(239,68,68,0.2); }
+.btn-reject:hover { background: var(--accent-red); color: white; }
+
+.logout-btn { background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.4); color: var(--accent-red); padding: 10px 18px; border-radius: var(--radius-btn); font-weight: 600; font-size: 14px; cursor: pointer; transition: all var(--transition); }
+.logout-btn:hover { background: rgba(239, 68, 68, 0.15); border-color: var(--accent-red); }
+.theme-toggle { width: 44px; height: 44px; border-radius: 50%; background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 36px; flex-wrap: wrap; gap: 14px; }
+.header-actions { display: flex; gap: 12px; align-items: center; }
+
+.tab-bar { display: inline-flex; gap: 4px; margin-bottom: 24px; background: var(--bg-elevated); padding: 6px; border-radius: 12px; border: 1px solid var(--border-subtle); }
+.tab-btn { background: transparent; color: var(--text-muted); border: none; border-radius: 8px; padding: 10px 20px; font-weight: 600; font-size: 15px; cursor: pointer; transition: all var(--transition); }
+.tab-btn:hover { color: var(--text-primary); }
+.tab-btn.active { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-btn); border: 1px solid var(--border-subtle); }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 20px; animation: fadeIn 0.2s ease-out; }
+.glass-modal-content { background: var(--bg-surface); border: 1px solid var(--border-subtle); padding: 40px; border-radius: 20px; width: 100%; max-width: 800px; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-modal); animation: slideUp 0.3s ease-out; }
+
+.dark-scroll::-webkit-scrollbar { width: 8px; }
+.dark-scroll::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 10px; }
+
+/* FIX: High Visibility Logout Button */
+.logout-btn { 
+  background: rgba(239, 68, 68, 0.05); 
+  border: 1px solid rgba(239, 68, 68, 0.4); 
+  color: var(--accent-red); 
+  padding: 8px 16px; 
+  border-radius: var(--radius-btn); 
+  font-weight: 600; 
+  font-size: 13px; 
+  cursor: pointer; 
+  transition: all var(--transition);
+}
+.logout-btn:hover { 
+  background: rgba(239, 68, 68, 0.15); 
+  border-color: var(--accent-red);
+}
+
+.theme-toggle { width: 40px; height: 40px; border-radius: 50%; background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 36px; flex-wrap: wrap; gap: 14px; }
+.header-actions { display: flex; gap: 12px; align-items: center; }
+
+.tab-bar { display: inline-flex; gap: 4px; margin-bottom: 24px; background: var(--bg-elevated); padding: 6px; border-radius: 12px; border: 1px solid var(--border-subtle); }
+.tab-btn { background: transparent; color: var(--text-muted); border: none; border-radius: 8px; padding: 8px 16px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all var(--transition); }
+.tab-btn:hover { color: var(--text-primary); }
+.tab-btn.active { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-btn); border: 1px solid var(--border-subtle); }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 20px; animation: fadeIn 0.2s ease-out; }
+.glass-modal-content { background: var(--bg-surface); border: 1px solid var(--border-subtle); padding: 40px; border-radius: 20px; width: 100%; max-width: 800px; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-modal); animation: slideUp 0.3s ease-out; }
+
+.dark-scroll::-webkit-scrollbar { width: 6px; }
+.dark-scroll::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 10px; }
+
+@keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(28px) scale(0.98); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
+@keyframes float   { 0% { transform: translate(0,0) scale(1); } 50% { transform: translate(25px,-35px) scale(1.08); } 100% { transform: translate(-18px,25px) scale(0.93); } }
