@@ -1,35 +1,57 @@
-# 🛡️ Microgrant Tracking and Impact Evaluation Platform
+# 🛡️ Grant Tracker: Cryptographic Microgrant Platform
 
-## 1. Project Introduction
-This platform revolutionizes microgrant management by enhancing backend security and automating fraud detection for student financial assistance. This phase focuses on creating a tamper-proof financial ledger and optimizing proof-of-usage verification using digital forensics.
+A high-security, full-stack web application designed for managing, tracking, and evaluating microgrants. Built with a "cyber-fintech" aesthetic, this platform features a cryptographic ledger, automated forensic image scanning for fraud detection, and multi-factor vault authorization.
 
-## 2. Epics & Core Features
-**Feature #1: Automated Forensic Scanning (EXIF)**
-* Isolated microservice using the `exifr` library to extract metadata (creation date, location) from uploaded receipts to detect timeline fraud.
-**Feature #2: Cryptographic Financial Ledger**
-* Uses the Node.js `crypto` library to chain SHA-256 hashes for every approved grant, ensuring database records are append-only and immutable.
-**Feature #3: Real-Time Fraud Alerts**
-* Integration with a Discord webhook to instantly alert administrators when forensics anomalies (e.g., falsified timestamps) are detected.
+## ✨ Key Features
 
-## 3. Deployment Architecture
-* **Frontend (React):** Deployed on Vercel
-* **Backend (Node/Express API Gateway):** Deployed on Render
-* **Database (MongoDB):** Cloud-hosted on MongoDB Atlas
-* **Evidence Storage:** Amazon S3 (for receipts and FORENSIC artifacts)
+### 👨‍💻 Admin Console (High-Security)
+* **Cryptographic Ledger:** Every action (approval, rejection, proof upload) is cryptographically sealed using `SHA-256` hashing to ensure an immutable audit trail.
+* **Automated Forensic X-Ray:** Uploaded expense receipts are automatically scanned using `exifr` to extract EXIF metadata. Flags tampered files or backdated images instantly.
+* **Vault Escrow Authorization:** Final disbursal of funds requires a time-sensitive, 6-digit OTP sent via email (`Nodemailer`) to the Admin.
+* **Command Palette:** Press `Cmd + K` (or `Ctrl + K`) to open a spotlight search for rapid UI navigation and quick actions.
+* **Executive PDF Exports:** Generate formatted PDF audit reports of the entire ledger or specific date ranges using `jsPDF`.
+* **Smart Bulk Actions:** Select multiple grants to approve, reject, or export simultaneously.
 
-## 4. Current File Structure
-Based on the initial commit architecture:
+### 📝 Applicant Portal
+* **Gamified Progression:** Applicants earn Bronze, Silver, or Gold tier statuses based on their successful project completion rate.
+* **Dynamic Budget Tracking:** Visual SVG rings and progress bars track exactly how much capital has been disbursed versus how much is locked in escrow.
+* **Draft & Crop Receipts:** Built-in React image cropping (`react-image-crop`) allows users to format their receipts before securely uploading them to the server.
+* **Impact Evaluation:** Submit final outcome reports with key performance indicators (KPIs) to unlock higher credit limits.
+
+---
+
+## 🛠 Tech Stack
+
+**Frontend (Client)**
+* **Framework:** React.js
+* **Styling:** Custom CSS (Glassmorphism, Dark/Light Mode, Neon Accents)
+* **Animation:** Framer Motion, React-TSParticles, Canvas Confetti
+* **Utilities:** jsPDF (Reporting), Lucide-React (Icons), Sonner (Toasts)
+
+**Backend (Server)**
+* **Environment:** Node.js & Express.js
+* **Security:** Crypto (SHA-256 Hashing)
+* **Forensics:** Exifr (Metadata Extraction)
+* **Communications:** Nodemailer (OTP / Alerts)
+* **Database:** In-memory Mock Data (MongoDB integration ready)
+
+---
+
+## 📂 Project Structure
 
 ```text
-📂 grant-tracker
-├── 📂 client          # React Frontend application
-│   ├── 📂 src
-│   │   ├── 📂 components  # Admin/Applicant Dashboards & Login UI
-│   │   ├── App.js         # Core React routing
-│   │   └── index.js       # React entry point
-│   ├── package.json       # Frontend dependencies (jspdf, etc.)
-│   └── README.md          # Client-specific notes
-├── 📂 server          # Node.js/Express API Gateway
-│   ├── index.js           # Core backend server logic
-│   └── package.json       # Backend dependencies (crypto, multer)
-└── .gitignore         # Critical security file (ignores node_modules)
+grant-tracker/
+├── client/                     # Frontend React Application
+│   ├── public/
+│   └── src/
+│       ├── components/
+│       │   ├── Admin/          # Admin Dashboard & Styles
+│       │   ├── Applicant/      # Applicant Dashboard & Components
+│       │   └── Login.js        # Auth & Role Routing
+│       ├── App.js              # Main App & Transition Logic
+│       └── index.js
+│
+└── server/                     # Backend Node/Express API
+    ├── index.js                # Core Server, Routes, and Forensics
+    ├── .env                    # Secrets (Not pushed to Git)
+    └── package.json
