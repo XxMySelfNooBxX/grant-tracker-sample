@@ -215,12 +215,129 @@ app.post('/add-grant', (req, res) => {
     status: 'Pending', actionBy: null, note: '',
     creditScore, date: new Date().toLocaleDateString(),
     disbursedAmount: 0, proofs: [], privateNotes: [], // Added privateNotes init
+    holdDetails: {
+      isOnHold: false,
+      holdStatus: "ACTIVE",
+      holdReason: "",
+      holdCategory: "",
+      adminNotes: "",
+      holdCreatedAt: null,
+      lastUpdatedAt: null,
+      evidenceFiles: []
+    },
     previousHash: 'GENESIS_BLOCK_0000', currentHash: ''
   };
   newGrant.currentHash = generateHash({ source, amount: reqAmount, date: newGrant.date }, newGrant.previousHash);
   grants.push(newGrant);
+  console.log("ALL GRANTS:", grants);
   logAction('System', 'SUBMITTED', source, `New ${type} grant application for ₹${reqAmount}`, newGrant.id);
   res.json(newGrant);
+});
+
+app.post('/api/admin/grants/:id/hold', (req, res) => {
+  const grant = grants.find(
+    g => g.id === parseInt(req.params.id)
+  );
+
+  if (!grant) {
+    return res.status(404).json({
+      message: "Grant not found"
+    });
+  }
+
+  if (!grant.holdDetails) {
+    grant.holdDetails = {
+      isOnHold: false,
+      holdStatus: "ACTIVE",
+      holdReason: "",
+      holdCategory: "",
+      adminNotes: "",
+      holdCreatedAt: null,
+      lastUpdatedAt: null,
+      evidenceFiles: [],
+      holdHistory: []
+    };
+  }
+
+  grant.holdDetails.isOnHold = true;
+  grant.holdDetails.holdStatus =
+    req.body.holdStatus || "SOFT_HOLD";
+  grant.holdDetails.holdReason =
+    req.body.holdReason || "";
+  grant.holdDetails.holdCategory =
+    req.body.holdCategory || "";
+  grant.holdDetails.adminNotes =
+    req.body.adminNotes || "";
+  grant.holdDetails.evidenceFiles =
+    req.body.evidenceFiles || [];
+
+  grant.holdDetails.holdCreatedAt = new Date();
+  grant.holdDetails.lastUpdatedAt = new Date();
+
+  // create history log
+  if (!grant.holdDetails.holdHistory) {
+    grant.holdDetails.holdHistory = [];
+  }
+
+  grant.holdDetails.holdHistory.push({
+    action: "HOLD_APPLIED",
+    reason: grant.holdDetails.holdReason,
+    category: grant.holdDetails.holdCategory,
+    evidenceFiles: grant.holdDetails.evidenceFiles,
+    timestamp: new Date().toISOString()
+  });
+
+  console.log("HOLD UPDATED:", grant.holdDetails);
+
+  res.json(grant);
+});
+
+app.post('/api/admin/grants/:id/release-hold', (req, res) => {
+  const grant = grants.find(
+    g => g.id === parseInt(req.params.id)
+  );
+
+  if (!grant) {
+    return res.status(404).json({
+      message: "Grant not found"
+    });
+  }
+
+  if (!grant.holdDetails) {
+    grant.holdDetails = {
+      isOnHold: false,
+      holdStatus: "ACTIVE",
+      holdReason: "",
+      holdCategory: "",
+      adminNotes: "",
+      holdCreatedAt: null,
+      lastUpdatedAt: null,
+      evidenceFiles: [],
+      holdHistory: []
+    };
+  }
+
+  grant.holdDetails.isOnHold = false;
+  grant.holdDetails.holdStatus = "ACTIVE";
+  grant.holdDetails.lastUpdatedAt = new Date();
+
+  if (!grant.holdDetails.holdHistory) {
+    grant.holdDetails.holdHistory = [];
+  }
+
+  grant.holdDetails.holdHistory.push({
+    action: "HOLD_RELEASED",
+    reason: grant.holdDetails.holdReason,
+    category: grant.holdDetails.holdCategory,
+    timestamp: new Date().toISOString()
+  });
+
+  grant.holdDetails.holdReason = "";
+  grant.holdDetails.holdCategory = "";
+  grant.holdDetails.adminNotes = "";
+  grant.holdDetails.evidenceFiles = [];
+
+  res.json(grant);
 });
 
 // EDIT GRANT
@@ -409,8 +526,19 @@ app.post('/add-private-note', (req, res) => {
 // UPDATE STATUS
 app.post('/update-status', (req, res) => {
   const { id, status, actionBy, note, otp, adminEmail } = req.body;
-  const grant = grants.find(g => g.id === id);
+  const grantId = parseInt(id, 10);
+  const grant = grants.find(g => g.id === grantId);
+  console.log("UPDATE STATUS REQUEST:", {
+    requestedId: grantId,
+    foundGrantId: grant?.id,
+    holdState: grant?.holdDetails
+  });
   if (!grant) return res.status(404).json({ message: 'Grant not found' });
+  if (grant.holdDetails?.isOnHold) {
+    return res.status(403).json({
+      message: "Funds are currently on hold by admin"
+    });
+  }
 
   const oldStatus = grant.status;
 
@@ -604,6 +732,16 @@ const injectMockData = () => {
     g.id = idCounter++;
     g.actionBy = (g.status === 'Pending' || g.status === 'Cancelled') ? null : 'System_Admin';
     g.note = g.note || '';
+    g.holdDetails = {
+      isOnHold: false,
+      holdStatus: "ACTIVE",
+      holdReason: "",
+      holdCategory: "",
+      adminNotes: "",
+      holdCreatedAt: null,
+      lastUpdatedAt: null,
+      evidenceFiles: []
+    };
     g.previousHash = 'GENESIS_BLOCK_0000';
     g.currentHash = generateHash({ source: g.source, amount: g.amount, date: g.date }, g.previousHash);
     grants.push(g);

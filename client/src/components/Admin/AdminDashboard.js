@@ -31,6 +31,20 @@ const getRisk = (score) => {
 
 const daysSince = (dateStr) => { const d = new Date(dateStr); return isNaN(d) ? 0 : Math.floor((Date.now() - d) / 86400000); };
 const ACTION_STATUSES = ['Pending', 'Awaiting Review', 'Blocked'];
+const HOLD_CATEGORY_OPTIONS = [
+  "RECEIPT_MISMATCH",
+  "SUSPICIOUS_PROOF",
+  "MISSING_DOCUMENTS",
+  "FRAUD_ALERT",
+  "MANUAL_REVIEW",
+  "OTHER"
+];
+const formatHoldLabel = (value) =>
+  value
+    .toLowerCase()
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 
 const STATUS_COLORS = {
   All: '#4f9cf9', Pending: '#fbbf24', 'Phase 1 Approved': '#34d399',
@@ -664,6 +678,13 @@ export default function AdminDashboard({ currentUser, grantsList = [], fetchGran
   const [privateNoteText, setPrivateNoteText] = useState('');
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
+  const [holdTarget, setHoldTarget] = useState(null);
+  const [holdHistoryTarget, setHoldHistoryTarget] = useState(null);
+  const [holdCategory, setHoldCategory] = useState('RECEIPT_MISMATCH');
+  const [customReasonInput, setCustomReasonInput] = useState('');
+  const [showHoldCategoryMenu, setShowHoldCategoryMenu] = useState(false);
+  const [holdAdminNotesInput, setHoldAdminNotesInput] = useState('');
+  const [holdEvidenceFiles, setHoldEvidenceFiles] = useState([]);
   const [kycList,          setKycList]          = useState([]);
   const [kycImages,        setKycImages]        = useState({});
   const [kycRejectTarget,  setKycRejectTarget]  = useState(null);
@@ -804,6 +825,10 @@ const reviewKyc = (email, decision, note = '') => {
   const fullyDisbursedGrants = grantsList.filter(g => g.status === 'Fully Disbursed' || g.status === 'Evaluated');
   const totalImpact = grantsList.reduce((s, g) => s + (g.disbursedAmount || 0), 0);
   const pendingCount = grantsList.filter(g => g.status === 'Pending' || g.status === 'Awaiting Review').length;
+  const verifications = kycList;
+  const kycPendingCount = (verifications || []).filter(
+    v => v.status === "Pending"
+  ).length;
   const actionQueue = grantsList.filter(g => ACTION_STATUSES.includes(g.status)).map(g => ({ ...g, waitDays: daysSince(g.date) })).sort((a, b) => b.waitDays - a.waitDays);
 
   const processedGrants = useMemo(() => {
@@ -826,11 +851,10 @@ const reviewKyc = (email, decision, note = '') => {
     return () => clearTimeout(timer);
   }, []);
   useEffect(() => {
-  if (activeTab !== 'kyc') return;
-  fetchKyc(); // immediate fetch on tab open
-  const interval = setInterval(fetchKyc, 5000);
-  return () => clearInterval(interval);
-}, [activeTab]);
+    fetchKyc();
+    const interval = setInterval(fetchKyc, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     setRevealedGrantIds(prev => {
@@ -846,7 +870,7 @@ const reviewKyc = (email, decision, note = '') => {
 
   const updateStatus = (id, newStatus, note = '', otpCode = '') => {
     const adminEmail = localStorage.getItem('currentUserEmail') || 'shauryacocid@gmail.com';
-    axios.post(`${API}/update-status`, { id, status: newStatus, actionBy: currentUser, note, otp: otpCode, adminEmail })
+    axios.post(`${API}/update-status`, { id: Number(id), status: newStatus, actionBy: currentUser, note, otp: otpCode, adminEmail })
       .then(() => {
         fetchGrants(); setViewingGrant(null); setRejectTarget(null); setRejectNote(''); setShowOtpModal(false); setOtpInput(''); setOtpError(''); setXrayMode(false);
       })
@@ -854,6 +878,59 @@ const reviewKyc = (email, decision, note = '') => {
         if (newStatus === 'Fully Disbursed') setOtpError(err.response?.data?.message || 'Invalid OTP');
         else toast.error(err.response?.data?.message || 'Error updating status');
       });
+  };
+
+  const openHoldModal = (grant) => {
+    setHoldTarget(grant);
+    setHoldCategory('RECEIPT_MISMATCH');
+    setCustomReasonInput('');
+    setShowHoldCategoryMenu(false);
+    setHoldAdminNotesInput('');
+    setHoldEvidenceFiles([]);
+  };
+
+  const closeHoldModal = () => {
+    setHoldTarget(null);
+    setHoldCategory('RECEIPT_MISMATCH');
+    setCustomReasonInput('');
+    setShowHoldCategoryMenu(false);
+    setHoldAdminNotesInput('');
+    setHoldEvidenceFiles([]);
+  };
+
+  const openHoldHistoryModal = (grant) => {
+    setHoldHistoryTarget(grant);
+  };
+
+  const closeHoldHistoryModal = () => {
+    setHoldHistoryTarget(null);
+  };
+
+  const confirmGrantHold = () => {
+    if (!holdTarget) return;
+    const resolvedReason = holdCategory === "OTHER"
+      ? customReasonInput
+      : holdCategory;
+    axios.post(`${API}/api/admin/grants/${holdTarget.id}/hold`, {
+      holdStatus: "SOFT_HOLD",
+      holdReason: resolvedReason,
+      holdCategory: holdCategory,
+      adminNotes: holdAdminNotesInput,
+      evidenceFiles: holdEvidenceFiles.map(file => file.name)
+    })
+      .then(() => {
+        fetchGrants();
+        closeHoldModal();
+      })
+      .catch(err => toast.error(err.response?.data?.message || 'Failed to put grant on hold'));
+  };
+
+  const releaseGrantHold = (grant) => {
+    axios.post(`${API}/api/admin/grants/${grant.id}/release-hold`)
+      .then(() => {
+        fetchGrants();
+      })
+      .catch(err => toast.error(err.response?.data?.message || 'Failed to release hold'));
   };
 
   const handleAddPrivateNote = (grantId) => {
@@ -939,6 +1016,128 @@ const reviewKyc = (email, decision, note = '') => {
   const catTotals = {};
   grantsList.forEach(g => { if (g.disbursedAmount > 0) { const t = g.type || 'General'; catTotals[t] = (catTotals[t] || 0) + g.disbursedAmount; } });
 
+  const renderGrantActions = (g, options = {}) => {
+    const { compact = false, closeModalAfterAction = false } = options;
+    if (!g) return null;
+
+    const handleApprove = () => {
+      updateStatus(g.id, 'Phase 1 Approved');
+      if (closeModalAfterAction) {
+        setViewingGrant(null);
+        setViewingApplication(null);
+      }
+    };
+
+    const handleReject = () => {
+      if (closeModalAfterAction) {
+        setViewingGrant(null);
+        setViewingApplication(null);
+      }
+      setRejectTarget(g);
+      setRejectNote('');
+    };
+
+    return (
+      <>
+        {!closeModalAfterAction && (
+          <SpringTooltip text="View full application details">
+            <motion.button
+              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+              className="action-btn"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(79,156,249,0.08)', color: 'var(--accent-blue)', border: '1px solid rgba(79,156,249,0.2)' }}
+              onClick={() => setViewingApplication(g)}
+            >
+              <FileText size={14} /> View Application
+            </motion.button>
+          </SpringTooltip>
+        )}
+
+        {!closeModalAfterAction && (
+          <motion.button
+            whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+            className="action-btn"
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(79,156,249,0.08)', color: 'var(--accent-blue)', border: '1px solid rgba(79,156,249,0.2)' }}
+            onClick={() => openHoldHistoryModal(g)}
+          >
+            <ScrollText size={14} /> View History
+          </motion.button>
+        )}
+
+        {!closeModalAfterAction && !g?.holdDetails?.isOnHold && (
+          g.status === "Pending" ||
+          g.status === "Awaiting Review" ||
+          g.status === "Under Review"
+        ) && (
+          <motion.button
+            whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+            className="action-btn"
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(251,191,36,0.12)', color: 'var(--accent-yellow)', border: '1px solid rgba(251,191,36,0.25)' }}
+            onClick={() => openHoldModal(g)}
+          >
+            <ShieldAlert size={14} /> Put On Hold
+          </motion.button>
+        )}
+
+        {!closeModalAfterAction && g?.holdDetails?.isOnHold && (
+          <motion.button
+            whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+            className="action-btn"
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(52,211,153,0.12)', color: 'var(--accent-green)', border: '1px solid rgba(52,211,153,0.25)' }}
+            onClick={() => releaseGrantHold(g)}
+          >
+            <ShieldCheck size={14} /> Release Hold
+          </motion.button>
+        )}
+
+        {g.status === 'Pending' && (
+          <>
+            <HoldToApproveButton onApprove={handleApprove} />
+            {closeModalAfterAction ? (
+              <motion.button
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                className="action-btn btn-reject"
+                style={{ flex: 1, padding: '14px', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                onClick={handleReject}
+              >
+                <XCircle size={16} /> Reject
+              </motion.button>
+            ) : (
+              <SpringTooltip text="Decline and close application">
+                <motion.button
+                  whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                  className="action-btn btn-reject"
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '100%' }}
+                  onClick={handleReject}
+                >
+                  <XCircle size={14} /> Reject
+                </motion.button>
+              </SpringTooltip>
+            )}
+          </>
+        )}
+
+        {!closeModalAfterAction && (g.status === 'Awaiting Review' || g.status === 'Blocked') && (
+          <SpringTooltip text={g.status === 'Blocked' ? "Open case file and internal notes" : "Analyze receipts & metadata"}>
+            <motion.button
+              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+              className="neon-btn neon-blue"
+              style={{ width: 'auto', padding: '8px 18px', fontSize: '12px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px', alignSelf: compact ? 'flex-end' : 'auto' }}
+              onClick={() => setViewingGrant(g)}
+            >
+              {g.status === 'Blocked' ? <><ShieldAlert size={14} /> Investigate Case</> : <><FileSearch size={14} /> Review Proof</>}
+            </motion.button>
+          </SpringTooltip>
+        )}
+
+        {!closeModalAfterAction && g.status === 'Phase 1 Approved' && (
+          <span style={{ fontSize: '12px', color: 'var(--accent-yellow)', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px', alignSelf: compact ? 'flex-end' : 'auto' }}>
+            <Clock size={12} /> Awaiting proof upload…
+          </span>
+        )}
+      </>
+    );
+  };
+
   return (
     <div className="app-wrapper" style={{ position: 'relative' }}>
       <Toaster position="bottom-right" theme={isDarkMode ? 'dark' : 'light'} richColors expand={false} />
@@ -990,7 +1189,7 @@ const reviewKyc = (email, decision, note = '') => {
   <button className={`tab-btn ${activeTab === 'kyc' ? 'active' : ''}`}
     onClick={() => setActiveTab('kyc')}
     style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-    <BadgeCheck size={16} /> KYC Queue {kycList.filter(k => k.status === 'Pending').length > 0 && `(${kycList.filter(k => k.status === 'Pending').length})`}
+    <BadgeCheck size={16} /> KYC Queue ({kycPendingCount})
   </button>
 </div>
 
@@ -1192,36 +1391,15 @@ const reviewKyc = (email, decision, note = '') => {
                           </div>
                         </div>
                         {g.note && <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(248,113,113,0.07)', border: '1px solid rgba(248,113,113,0.18)', borderRadius: '8px', padding: '7px 12px', fontSize: '12px', color: 'var(--accent-red)' }}><FileSignature size={14} /> "{g.note}"</div>}
+                        {g?.holdDetails?.isOnHold && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: '8px', padding: '7px 12px', fontSize: '12px', color: 'var(--accent-yellow)' }}>
+                            <ShieldAlert size={14} /> Reason: {g.holdDetails?.holdReason}
+                          </div>
+                        )}
                         <div className="disbursal-track"><div className={`disbursal-fill${g.amount > 0 && (g.disbursedAmount || 0) >= g.amount ? ' full' : ''}`} style={{ width: `${g.amount > 0 ? ((g.disbursedAmount || 0) / g.amount) * 100 : 0}%` }}></div></div>
 
                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                          <SpringTooltip text="View full application details">
-                            <motion.button
-                              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                              className="action-btn"
-                              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(79,156,249,0.08)', color: 'var(--accent-blue)', border: '1px solid rgba(79,156,249,0.2)' }}
-                              onClick={() => setViewingApplication(g)}
-                            >
-                              <FileText size={14} /> View Application
-                            </motion.button>
-                          </SpringTooltip>
-
-                          {g.status === 'Pending' && (<>
-                            <HoldToApproveButton onApprove={() => updateStatus(g.id, 'Phase 1 Approved')} />
-                            <SpringTooltip text="Decline and close application">
-                              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="action-btn btn-reject" style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '100%' }} onClick={() => { setRejectTarget(g); setRejectNote(''); }}><XCircle size={14} /> Reject</motion.button>
-                            </SpringTooltip>
-                          </>)}
-
-                          {(g.status === 'Awaiting Review' || g.status === 'Blocked') && (
-                            <SpringTooltip text={g.status === 'Blocked' ? "Open case file and internal notes" : "Analyze receipts & metadata"}>
-                              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="neon-btn neon-blue" style={{ width: 'auto', padding: '8px 18px', fontSize: '12px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setViewingGrant(g)}>
-                                {g.status === 'Blocked' ? <><ShieldAlert size={14} /> Investigate Case</> : <><FileSearch size={14} /> Review Proof</>}
-                              </motion.button>
-                            </SpringTooltip>
-                          )}
-
-                          {g.status === 'Phase 1 Approved' && <span style={{ fontSize: '12px', color: 'var(--accent-yellow)', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px' }}><Clock size={12} /> Awaiting proof upload…</span>}
+                          {renderGrantActions(g)}
                           {g.status === 'Evaluated' && <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="action-btn" style={{ background: 'rgba(167,139,250,0.1)', color: 'var(--accent-purple)', border: '1px solid rgba(167,139,250,0.25)', display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setViewingImpact(g)}><Rocket size={14} /> View Impact</motion.button>}
                         </div>
                       </motion.li>
@@ -1304,33 +1482,15 @@ const reviewKyc = (email, decision, note = '') => {
                                   <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: '800', padding: '3px 10px', borderRadius: '10px', background: urgent ? 'rgba(248,113,113,0.15)' : 'rgba(251,191,36,0.12)', color: urgent ? '#f87171' : '#fcd34d', border: `1px solid ${urgent ? 'rgba(248,113,113,0.3)' : 'rgba(251,191,36,0.25)'}` }}><Clock size={12} /> {g.waitDays}d waiting</span>
                                 )}
                                 <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Status: <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>{g.status}</span></span>
+                                {g?.holdDetails?.isOnHold && (
+                                  <span style={{ fontSize: '12px', color: 'var(--accent-yellow)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <ShieldAlert size={12} /> Reason: {g.holdDetails?.holdReason}
+                                  </span>
+                                )}
                               </div>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
-                              <SpringTooltip text="View full application details">
-                                <motion.button
-                                  whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                                  className="action-btn"
-                                  style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(79,156,249,0.08)', color: 'var(--accent-blue)', border: '1px solid rgba(79,156,249,0.2)' }}
-                                  onClick={() => setViewingApplication(g)}
-                                >
-                                  <FileText size={14} /> View Application
-                                </motion.button>
-                              </SpringTooltip>
-                              {g.status === 'Pending' && (<>
-                                <HoldToApproveButton onApprove={() => updateStatus(g.id, 'Phase 1 Approved')} />
-                                <SpringTooltip text="Decline and close application">
-                                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="action-btn btn-reject" style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '100%' }} onClick={() => { setRejectTarget(g); setRejectNote(''); }}><XCircle size={14} /> Reject</motion.button>
-                                </SpringTooltip>
-                              </>)}
-
-                              {(g.status === 'Awaiting Review' || g.status === 'Blocked') && (
-                                <SpringTooltip text={g.status === 'Blocked' ? "Open case file and internal notes" : "Analyze receipts & metadata"}>
-                                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="neon-btn neon-blue" style={{ width: 'auto', padding: '8px 18px', fontSize: '12px', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }} onClick={() => setViewingGrant(g)}>
-                                    {g.status === 'Blocked' ? <><ShieldAlert size={14} /> Investigate Case</> : <><FileSearch size={14} /> Review Proof</>}
-                                  </motion.button>
-                                </SpringTooltip>
-                              )}
+                              {renderGrantActions(g, { compact: true })}
                             </div>
                           </div>
                         </motion.li>
@@ -1641,18 +1801,7 @@ const reviewKyc = (email, decision, note = '') => {
 
                   {g.status === 'Pending' && (
                     <div style={{ display: 'flex', gap: '12px', paddingTop: '4px', borderTop: '1px solid var(--border-subtle)' }}>
-                      <HoldToApproveButton onApprove={() => {
-                        updateStatus(g.id, 'Phase 1 Approved');
-                        setViewingApplication(null);
-                      }} />
-                      <motion.button
-                        whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                        className="action-btn btn-reject"
-                        style={{ flex: 1, padding: '14px', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                        onClick={() => { setViewingApplication(null); setRejectTarget(g); setRejectNote(''); }}
-                      >
-                        <XCircle size={16} /> Reject
-                      </motion.button>
+                      {renderGrantActions(g, { closeModalAfterAction: true })}
                     </div>
                   )}
                 </div>
@@ -1660,6 +1809,117 @@ const reviewKyc = (email, decision, note = '') => {
             </motion.div>
           );
         })()}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {holdTarget && (
+          <motion.div className="modal-overlay" initial={{ opacity: 0, backdropFilter: 'blur(0px)' }} animate={{ opacity: 1, backdropFilter: 'blur(10px)' }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
+            <motion.div className="glass-modal-content" style={{ maxWidth: '480px', width: '100%' }} initial={{ scale: 0.92, y: 20, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.92, y: 20, opacity: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+                <h2 style={{ margin: 0, fontSize: '20px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ShieldAlert size={20} /> Put Grant On Hold
+                </h2>
+                <button onClick={closeHoldModal} style={{ background: 'none', border: 'none', fontSize: '26px', color: 'var(--text-muted)', cursor: 'pointer' }}>×</button>
+              </div>
+
+              <label className="input-label">Hold Category</label>
+              <div className="hold-select-wrap">
+                <button
+                  type="button"
+                  className="hold-select-trigger"
+                  onClick={() => setShowHoldCategoryMenu(prev => !prev)}
+                >
+                  <span className="hold-select-label">{formatHoldLabel(holdCategory)}</span>
+                  <span className={`hold-select-chevron${showHoldCategoryMenu ? ' open' : ''}`}>⌄</span>
+                </button>
+                {showHoldCategoryMenu && (
+                  <div className="hold-select-menu">
+                    {HOLD_CATEGORY_OPTIONS.map(opt => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => { setHoldCategory(opt); setShowHoldCategoryMenu(false); }}
+                        className={`hold-select-option${holdCategory === opt ? ' selected' : ''}`}
+                      >
+                        {formatHoldLabel(opt)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {holdCategory === 'OTHER' && (
+                <>
+                  <label className="input-label">Custom Reason</label>
+                  <input className="dark-input" value={customReasonInput} onChange={e => setCustomReasonInput(e.target.value)} placeholder="Enter custom reason" />
+                </>
+              )}
+
+              <label className="input-label">Admin Notes</label>
+              <textarea className="dark-input" rows={3} value={holdAdminNotesInput} onChange={e => setHoldAdminNotesInput(e.target.value)} placeholder="Internal notes for this hold" />
+
+              <label className="input-label">Upload Evidence (optional)</label>
+              <input
+                className="dark-input"
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                multiple
+                onChange={e => setHoldEvidenceFiles(Array.from(e.target.files || []))}
+              />
+              {holdEvidenceFiles.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                  {holdEvidenceFiles.map(file => (
+                    <span key={file.name} style={{ fontSize: '11px', color: 'var(--text-primary)', background: 'rgba(79,156,249,0.12)', border: '1px solid rgba(79,156,249,0.25)', borderRadius: '999px', padding: '5px 10px' }}>
+                      {file.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                <button className="neon-btn neon-red" style={{ flex: 1 }} onClick={confirmGrantHold}>Confirm Hold</button>
+                <button onClick={closeHoldModal} style={{ flex: 1, background: 'transparent', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)', borderRadius: '10px', cursor: 'pointer', fontWeight: '600', fontFamily: 'DM Sans' }}>Cancel</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {holdHistoryTarget && (
+          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <motion.div className="glass-modal-content" style={{ maxWidth: '560px', width: '100%' }} initial={{ scale: 0.92, y: 20, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.92, y: 20, opacity: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+                <h2 style={{ margin: 0, fontSize: '20px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ScrollText size={20} /> Hold History
+                </h2>
+                <button onClick={closeHoldHistoryModal} style={{ background: 'none', border: 'none', fontSize: '26px', color: 'var(--text-muted)', cursor: 'pointer' }}>×</button>
+              </div>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '10px' }}>
+                {holdHistoryTarget.source} • {holdHistoryTarget.type}
+              </div>
+              <div className="dark-scroll" style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: '6px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {(holdHistoryTarget.holdDetails?.holdHistory || []).length === 0 ? (
+                  <div style={{ color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center', padding: '22px 8px' }}>
+                    No hold history available.
+                  </div>
+                ) : (
+                  (holdHistoryTarget.holdDetails?.holdHistory || []).map((item, idx) => {
+                    const t = item?.timestamp ? new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--';
+                    const evidenceCount = Array.isArray(item?.evidenceFiles) ? item.evidenceFiles.length : 0;
+                    return (
+                      <div key={`${item?.timestamp || idx}-${idx}`} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '10px 12px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: '700', marginBottom: '4px' }}>[{t}] {item?.action || 'HOLD_EVENT'}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Reason: {item?.reason || '-'}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>Category: {item?.category ? formatHoldLabel(item.category) : '-'}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Evidence: {evidenceCount} file{evidenceCount !== 1 ? 's' : ''}</div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
       </AnimatePresence>
 
       <AnimatePresence>
@@ -2013,22 +2273,7 @@ const reviewKyc = (email, decision, note = '') => {
 
               {(viewingGrant.status === 'Pending' || viewingGrant.status === 'Awaiting Review' || viewingGrant.status === 'Blocked') && (
                 <div style={{ padding: '20px 32px', background: 'var(--bg-elevated)', borderTop: '1px solid var(--border-subtle)', display: 'flex', gap: '16px', flexShrink: 0 }}>
-                  {viewingGrant.status === 'Pending' && (
-                    <>
-                      <HoldToApproveButton onApprove={() => {
-                        updateStatus(viewingGrant.id, 'Phase 1 Approved');
-                        setViewingGrant(null);
-                      }} />
-                      <motion.button
-                        whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                        className="action-btn btn-reject"
-                        style={{ flex: 1, padding: '14px', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                        onClick={() => { setViewingGrant(null); setRejectTarget(viewingGrant); setRejectNote(''); }}
-                      >
-                        <XCircle size={16} /> Reject
-                      </motion.button>
-                    </>
-                  )}
+                  {viewingGrant.status === 'Pending' && renderGrantActions(viewingGrant, { closeModalAfterAction: true })}
                   {(viewingGrant.status === 'Awaiting Review' || viewingGrant.status === 'Blocked') && (
                     <>
                       <motion.button

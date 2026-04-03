@@ -90,7 +90,13 @@ export default function KYCGate({ currentUser, currentUserEmail, onSubmitted, ha
         )}
         <input id={`kyc-${side}`} type="file" accept="image/jpeg,image/png"
           style={{ display: 'none' }}
-          onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0], side); }} />
+          onChange={e => {
+            const file = e.target.files?.[0];
+            if (file) {
+              handleFile(file, side);
+            }
+            e.target.value = '';
+          }} />
       </label>
       {image && (
         <button onClick={() => side === 'front' ? setFrontImage(null) : setBackImage(null)}

@@ -808,6 +808,101 @@ body.edge-glow-red::after {
   letter-spacing: -0.5px;
 }
 
+.hold-select-wrap {
+  position: relative;
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.hold-select-trigger {
+  width: 100%;
+  min-height: 46px;
+  background: rgba(15, 23, 42, 0.88);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.hold-select-trigger:hover {
+  background: rgba(30, 41, 59, 0.9);
+}
+
+.hold-select-trigger:focus-visible {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px var(--bg-base), 0 0 0 4px rgba(79, 156, 249, 0.35);
+}
+
+.hold-select-label {
+  color: var(--text-primary);
+  letter-spacing: 0.2px;
+}
+
+.hold-select-chevron {
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.hold-select-chevron.open {
+  transform: rotate(180deg);
+  color: var(--accent-blue);
+}
+
+.hold-select-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  padding: 8px;
+  z-index: 20;
+}
+
+.hold-select-option {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  padding: 11px 12px;
+  border-radius: 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.hold-select-option:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+}
+
+.hold-select-option.selected {
+  background: rgba(79, 156, 249, 0.2);
+  color: #8dc3ff;
+}
+
+.hold-select-option.selected:hover {
+  background: rgba(79, 156, 249, 0.26);
+}
+
 .kyc-queue-list {
   width: 100%;
   max-height: 520px;
@@ -862,5 +957,18 @@ body.edge-glow-red::after {
   .kyc-image-grid {
     grid-template-columns: 1fr !important;
     max-width: 100% !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .hold-select-trigger {
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+
+  .hold-select-option {
+    padding: 10px 11px;
+    font-size: 12px;
   }
 }
