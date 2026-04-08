@@ -2581,11 +2581,23 @@ const reviewKyc = (email, decision, note = '') => {
       </div>
 
       {/* Image section */}
-      {!imgs && !isLoading && (
-        <button onClick={() => loadKycImages(kyc.email)}
+      {!isLoading && (
+        <button
+          onClick={() => {
+            if (imgs) {
+              setKycImages(prev => {
+                const updated = { ...prev };
+                delete updated[kyc.email];
+                return updated;
+              });
+            } else {
+              loadKycImages(kyc.email);
+            }
+          }}
           className="neon-btn neon-blue"
-          style={{ width: 'auto', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Eye size={14} /> Load ID Images
+          style={{ width: 'auto', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+        >
+          <Eye size={14} /> {imgs ? 'Hide ID Images' : 'Load ID Images'}
         </button>
       )}
       {isLoading && (
