@@ -15,6 +15,15 @@ const STANDARD_TYPES = ["Research", "Travel", "Equipment", "Stipend"];
 const EXPENSE_CATEGORIES = ["Hardware", "Software", "Travel", "Consumables", "Services", "Other"];
 const API = 'http://localhost:3001';
 
+const formatHoldReason = (reason) => {
+  if (!reason) return "Under Review";
+  return reason
+    .toLowerCase()
+    .split("_")
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+};
+
 const getTier = (grants) => {
   const completed = grants.filter(g => g.status === 'Evaluated' || g.status === 'Fully Disbursed').length;
   const total = grants.length;
@@ -724,6 +733,7 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
             const isReview = grant.status === 'Awaiting Review';
             const isFull = grant.status === 'Fully Disbursed';
             const isBlocked = grant.status === 'Blocked';
+            const isOnHold = grant.holdDetails?.isOnHold === true;
             const si = STATUS_ICON[grant.status] || {};
             const draft = proofDrafts[grant.id] || { vendor: '', category: 'Hardware', customCategory: '', amount: '', gst: '', images: [] };
             const imp = impactState[grant.id] || {};
@@ -740,12 +750,25 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
             const canSave = draft.vendor && draft.amount && draft.images?.length > 0 && !willExceed && !isNegative;
 
             return (
-              <div key={grant.id} className="glass-card" style={{ borderLeft: `5px solid ${si.color || 'var(--accent-yellow)'}`, marginBottom: '28px' }}>
+              <div
+                key={grant.id}
+                className="glass-card"
+                style={{ borderLeft: `5px solid ${isOnHold ? '#f97316' : (si.color || 'var(--accent-yellow)')}`, marginBottom: '28px' }}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
                   <div>
                     <h3 style={{ margin: '0 0 8px 0', color: 'var(--text-heading)', fontSize: '20px' }}>{grant.type} Project</h3>
-                    <span style={{ background: 'var(--bg-elevated)', color: si.color, border: `1px solid ${si.color}55`, fontSize: '13px', fontWeight: '800', padding: '5px 14px', borderRadius: '20px', letterSpacing: '0.5px' }}>{si.icon} {grant.status}</span>
-                    <div style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: '8px' }}>{si.msg}</div>
+                    {isOnHold ? (
+                      <>
+                        <span style={{ background: 'rgba(255,120,0,0.12)', color: '#f97316', border: '1px solid rgba(255,120,0,0.45)', fontSize: '13px', fontWeight: '800', padding: '5px 14px', borderRadius: '20px', letterSpacing: '0.5px' }}>⚠ ON HOLD</span>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: '8px' }}>Grant actions are temporarily paused by admin.</div>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ background: 'var(--bg-elevated)', color: si.color, border: `1px solid ${si.color}55`, fontSize: '13px', fontWeight: '800', padding: '5px 14px', borderRadius: '20px', letterSpacing: '0.5px' }}>{si.icon} {grant.status}</span>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: '8px' }}>{si.msg}</div>
+                      </>
+                    )}
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: '26px', fontWeight: '800', color: 'var(--text-heading)' }}>₹{grant.amount.toLocaleString()}</div>
@@ -769,7 +792,53 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
                   </div>
                 </div>
 
-                {isBlocked && (
+                {isOnHold && (
+                  <div
+                    className="grant-hold-card"
+                    style={{
+                      border: '1px solid rgba(255,120,0,0.35)',
+                      background: 'rgba(255,120,0,0.06)',
+                      borderRadius: '12px',
+                      padding: '14px',
+                      marginTop: '14px'
+                    }}
+                  >
+                    <div className="hold-badge" style={{ color: '#f97316', fontWeight: '800', marginBottom: '8px' }}>⚠ ON HOLD</div>
+                    <div className="hold-reason" style={{ color: 'var(--text-primary)', marginBottom: '6px' }}>
+                      Reason: {formatHoldReason(grant.holdDetails.holdReason)}
+                    </div>
+                    <div className="hold-note" style={{ color: 'var(--text-muted)' }}>
+                      Admin Note: {grant.holdDetails.adminNotes || 'Please wait for further instructions'}
+                    </div>
+                    {grant.holdDetails?.evidenceFiles?.length > 0 && (
+                      <div className="hold-evidence">
+                        <div style={{ marginTop: '10px', fontSize: '12px', color: '#aaa' }}>
+                          Evidence Uploaded by Admin:
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '10px', marginTop: '8px', flexWrap: 'wrap' }}>
+                          {grant.holdDetails.evidenceFiles.map((file, index) => (
+                            <img
+                              key={index}
+                              src={`http://localhost:3001/uploads/${file}`}
+                              alt="evidence"
+                              onError={(e) => e.target.style.display = 'none'}
+                              style={{
+                                width: '120px',
+                                height: '80px',
+                                objectFit: 'cover',
+                                borderRadius: '8px',
+                                border: '1px solid rgba(255,255,255,0.1)'
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!isOnHold && isBlocked && (
                   <div style={{ padding: '24px', textAlign: 'center', color: '#ef4444', fontWeight: '700', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '12px', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
                     <div style={{ fontSize: '28px', marginBottom: '10px' }}>🛑</div>
                     <div style={{ fontSize: '20px', marginBottom: '6px' }}>Account Temporarily Frozen</div>
@@ -777,7 +846,7 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
                   </div>
                 )}
 
-                {isPhase1 && (
+                {!isOnHold && isPhase1 && (
                   <div className="bg-warn-panel" style={{ marginBottom: '16px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                       <h4 style={{ margin: 0, fontSize: '16px', color: 'var(--accent-yellow)' }}>📸 Expense Log</h4>
@@ -956,7 +1025,7 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
                   </div>
                 )}
 
-                {isReview && (
+                {!isOnHold && isReview && (
                   <div style={{ position: 'relative', padding: '20px', textAlign: 'center', color: 'var(--accent-yellow)', fontWeight: '700', background: 'var(--bg-warn-panel)', borderRadius: '12px', border: '1px solid var(--border-warn-panel)', overflow: 'hidden' }}>
                     <motion.div
                       animate={{ x: ['-120%', '120%'] }}
@@ -979,7 +1048,7 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
                   </div>
                 )}
 
-                {isFull && (
+                {!isOnHold && isFull && (
                   <div style={{ background: 'var(--bg-info-panel)', border: '1px solid var(--border-info-panel)', padding: '20px', borderRadius: '14px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
                       <span style={{ fontSize: '20px' }}>🚀</span>
