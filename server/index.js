@@ -47,6 +47,15 @@ const generateHash = (data, previousHash) => {
   const payload = JSON.stringify(data) + previousHash;
   return crypto.createHash('sha256').update(payload).digest('hex');
 };
+const getDisplayStatus = (grant) => {
+  const history = grant.holdDetails?.holdHistory || [];
+  const last = history[history.length - 1];
+
+  if (last?.action === "WITHDRAWAL_APPROVED") return "REQUEST_ACCEPTED";
+  if (last?.action === "WITHDRAWAL_REJECTED") return "REQUEST_REJECTED";
+
+  return grant.status;
+};
 
 const logAction = (admin, action, target, details, targetId = null) => {
   auditLogs.unshift({
@@ -181,13 +190,80 @@ app.post('/review-verification', (req, res) => {
 
 app.get('/grants', (req, res) => {
   const enrichedGrants = grants.map(g => ({ 
-    ...g, 
-    strikes: userStrikes[g.userId] || 0 
+    ...g,
+    status: getDisplayStatus(g),
+    strikes: userStrikes[g.userId] || 0,
+    holdHistory: g.holdDetails?.holdHistory || []
+  }));
+  res.json(enrichedGrants);
+});
+
+app.get('/api/admin/grants', (req, res) => {
+  const enrichedGrants = grants.map(g => ({
+    ...g,
+    status: getDisplayStatus(g),
+    strikes: userStrikes[g.userId] || 0,
+    holdHistory: g.holdDetails?.holdHistory || []
   }));
   res.json(enrichedGrants);
 });
 
 app.get('/logs',   (req, res) => res.json(auditLogs));
+
+app.post('/api/applicant/request-withdrawal/:id', (req, res) => {
+  const grantId = parseInt(req.params.id, 10);
+  const grant = grants.find(g => g.id === grantId);
+
+  if (!grant) return res.status(404).json({ error: 'Grant not found' });
+  if (grant.withdrawalRequested || grant.withdrawalFinalized) {
+    return res.status(400).json({ error: 'Withdrawal already processed' });
+  }
+  if (!grant.holdDetails?.isOnHold && grant.status !== 'ON_HOLD') {
+    return res.status(400).json({ error: 'Withdrawal can only be requested for grants on hold' });
+  }
+
+  grant.withdrawalRequested = true;
+  grant.withdrawalRequestedAt = new Date();
+  grant.withdrawalFinalized = false;
+
+  if (!grant.holdDetails) {
+    grant.holdDetails = {
+      isOnHold: false,
+      holdStatus: "ACTIVE",
+      holdReason: "",
+      holdCategory: "",
+      adminNotes: "",
+      holdCreatedAt: null,
+      lastUpdatedAt: null,
+      evidenceFiles: [],
+      holdHistory: []
+    };
+  }
+  if (!grant.holdDetails.holdHistory) {
+    grant.holdDetails.holdHistory = [];
+  }
+
+  const event = {
+    action: "WITHDRAWAL_REQUESTED",
+    timestamp: new Date().toISOString()
+  };
+  if (!grant.holdDetails.holdHistory) {
+    grant.holdDetails.holdHistory = [];
+  }
+  grant.holdDetails.holdHistory.push(event);
+  grant.holdDetails.lastUpdatedAt = new Date().toISOString();
+
+  grant.previousHash = grant.currentHash;
+  grant.currentHash = generateHash({
+    status: grant.status,
+    withdrawalRequested: true,
+    withdrawalRequestedAt: grant.withdrawalRequestedAt,
+    time: Date.now()
+  }, grant.previousHash);
+
+  logAction('Applicant', 'WITHDRAWAL_REQUESTED', grant.source, 'Applicant requested withdrawal during hold', grant.id);
+  res.json({ success: true, grant });
+});
 
 // ADD GRANT
 app.post('/add-grant', (req, res) => {
@@ -216,6 +292,9 @@ app.post('/add-grant', (req, res) => {
     status: 'Pending', actionBy: null, note: '',
     creditScore, date: new Date().toLocaleDateString(),
     disbursedAmount: 0, proofs: [], privateNotes: [], // Added privateNotes init
+    withdrawalRequested: false,
+    withdrawalRequestedAt: null,
+    withdrawalFinalized: false,
     holdDetails: {
       isOnHold: false,
       holdStatus: "ACTIVE",
@@ -339,6 +418,88 @@ app.post('/api/admin/grants/:id/release-hold', (req, res) => {
   grant.holdDetails.evidenceFiles = [];
 
   res.json(grant);
+});
+
+app.post('/api/admin/grants/:id/withdrawal-action', (req, res) => {
+  const grant = grants.find(g => g.id === parseInt(req.params.id, 10));
+  if (!grant) {
+    return res.status(404).json({ message: 'Grant not found' });
+  }
+
+  const action = String(req.body.action || '').toUpperCase();
+  const actionBy = req.body.actionBy || 'Admin';
+  if (!['APPROVE', 'REJECT'].includes(action)) {
+    return res.status(400).json({ message: 'Invalid withdrawal action' });
+  }
+
+  if (!grant.holdDetails) {
+    grant.holdDetails = {
+      isOnHold: false,
+      holdStatus: "ACTIVE",
+      holdReason: "",
+      holdCategory: "",
+      adminNotes: "",
+      holdCreatedAt: null,
+      lastUpdatedAt: null,
+      evidenceFiles: [],
+      holdHistory: []
+    };
+  }
+  if (!grant.holdDetails.holdHistory) {
+    grant.holdDetails.holdHistory = [];
+  }
+
+  const oldStatus = grant.status;
+
+  if (action === 'APPROVE') {
+    grant.status = 'WITHDRAWN';
+    grant.withdrawalRequested = false;
+    grant.withdrawalFinalized = true;
+    grant.holdDetails.isOnHold = false;
+    grant.holdDetails.lastUpdatedAt = new Date().toISOString();
+    if (!grant.holdDetails.holdHistory) {
+      grant.holdDetails.holdHistory = [];
+    }
+    grant.holdDetails.holdHistory.push({
+      action: "WITHDRAWAL_APPROVED",
+      timestamp: new Date().toISOString()
+    });
+    logAction(actionBy, 'WITHDRAWAL_APPROVED', grant.source, 'Admin approved withdrawal request', grant.id);
+  } else {
+    // Keep existing status/hold state unchanged when admin rejects withdrawal.
+    grant.status = oldStatus;
+    grant.withdrawalRequested = false;
+    grant.withdrawalFinalized = true;
+    grant.holdDetails.lastUpdatedAt = new Date().toISOString();
+    if (!grant.holdDetails.holdHistory) {
+      grant.holdDetails.holdHistory = [];
+    }
+    grant.holdDetails.holdHistory.push({
+      action: "WITHDRAWAL_REJECTED",
+      timestamp: new Date().toISOString()
+    });
+    logAction(actionBy, 'WITHDRAWAL_REJECTED', grant.source, 'Admin rejected withdrawal request', grant.id);
+  }
+
+  grant.previousHash = grant.currentHash;
+  grant.currentHash = generateHash({
+    oldStatus,
+    status: grant.status,
+    withdrawalRequested: grant.withdrawalRequested,
+    action,
+    time: Date.now()
+  }, grant.previousHash);
+
+  res.json({ message: `Withdrawal ${action === 'APPROVE' ? 'approved' : 'rejected'}`, grant });
+});
+
+app.post('/api/admin/logs', (req, res) => {
+  const { type, message, grantId, admin, target } = req.body;
+  const parsedGrantId = Number.isNaN(parseInt(grantId, 10)) ? null : parseInt(grantId, 10);
+  const grant = parsedGrantId == null ? null : grants.find(g => g.id === parsedGrantId);
+  const logTarget = target || grant?.source || 'Grant';
+  logAction(admin || 'Admin', type || 'ADMIN_EVENT', logTarget, message || '', parsedGrantId);
+  res.json({ message: 'Log added' });
 });
 
 // EDIT GRANT
@@ -733,6 +894,9 @@ const injectMockData = () => {
     g.id = idCounter++;
     g.actionBy = (g.status === 'Pending' || g.status === 'Cancelled') ? null : 'System_Admin';
     g.note = g.note || '';
+    g.withdrawalRequested = Boolean(g.withdrawalRequested);
+    g.withdrawalRequestedAt = g.withdrawalRequestedAt || null;
+    g.withdrawalFinalized = Boolean(g.withdrawalFinalized);
     g.holdDetails = {
       isOnHold: false,
       holdStatus: "ACTIVE",

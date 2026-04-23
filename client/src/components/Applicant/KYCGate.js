@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { motion } from 'framer-motion';
 import { ShieldCheck, Upload, ChevronDown, LogOut } from 'lucide-react';
@@ -18,10 +18,14 @@ const API = 'http://localhost:3001';
 
 export default function KYCGate({ currentUser, currentUserEmail, onSubmitted, handleLogout }) {
   const [idType, setIdType]         = useState('');
-  const [frontImage, setFrontImage] = useState(null);
-  const [backImage, setBackImage]   = useState(null);
+  const [frontFile, setFrontFile] = useState(null);
+  const [backFile, setBackFile]   = useState(null);
+  const [frontPreview, setFrontPreview] = useState(null);
+  const [backPreview, setBackPreview]   = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState('');
+  const frontInputRef = useRef(null);
+  const backInputRef = useRef(null);
 
   const particlesInit = useCallback(async engine => {
     await loadSlim(engine);
@@ -35,27 +39,65 @@ export default function KYCGate({ currentUser, currentUserEmail, onSubmitted, ha
     reader.readAsDataURL(file);
   });
 
-  const handleFile = async (file, side) => {
-    try {
-      const base64 = await readFile(file);
-      side === 'front' ? setFrontImage(base64) : setBackImage(base64);
-      setError('');
-    } catch (e) { setError(e); }
+  useEffect(() => () => {
+    if (frontPreview) URL.revokeObjectURL(frontPreview);
+    if (backPreview) URL.revokeObjectURL(backPreview);
+  }, [frontPreview, backPreview]);
+
+  const handleFileSelect = (e, side) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const previewUrl = URL.createObjectURL(file);
+
+    if (side === 'front') {
+      if (frontPreview) URL.revokeObjectURL(frontPreview);
+      setFrontFile(file);
+      setFrontPreview(previewUrl);
+    } else {
+      if (backPreview) URL.revokeObjectURL(backPreview);
+      setBackFile(file);
+      setBackPreview(previewUrl);
+    }
+
+    setError('');
+    e.target.value = null;
+  };
+
+  const handleDrop = (e, side) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+
+    const previewUrl = URL.createObjectURL(file);
+
+    if (side === 'front') {
+      if (frontPreview) URL.revokeObjectURL(frontPreview);
+      setFrontFile(file);
+      setFrontPreview(previewUrl);
+    } else {
+      if (backPreview) URL.revokeObjectURL(backPreview);
+      setBackFile(file);
+      setBackPreview(previewUrl);
+    }
+
+    setError('');
   };
 
   const handleSubmit = async () => {
     if (!idType)     return setError('Please select an ID type.');
-    if (!frontImage) return setError('Please upload the front of your ID.');
-    if (!backImage)  return setError('Please upload the back of your ID.');
+    if (!frontFile) return setError('Please upload the front of your ID.');
+    if (!backFile)  return setError('Please upload the back of your ID.');
     setSubmitting(true);
     try {
+      const [frontImage, backImage] = await Promise.all([readFile(frontFile), readFile(backFile)]);
       await axios.post(`${API}/submit-verification`, {
         email: currentUserEmail, name: currentUser,
         idType, frontImage, backImage,
       });
       onSubmitted();
     } catch (e) {
-      setError(e.response?.data?.message || 'Submission failed. Please try again.');
+      setError(typeof e === 'string' ? e : (e.response?.data?.message || 'Submission failed. Please try again.'));
     } finally { setSubmitting(false); }
   };
 
@@ -65,7 +107,7 @@ export default function KYCGate({ currentUser, currentUserEmail, onSubmitted, ha
         textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '10px' }}>
         {label}
       </div>
-      <label htmlFor={`kyc-${side}`} style={{
+      <div style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         justifyContent: 'center', gap: '10px', height: '160px',
         borderRadius: '14px', cursor: 'pointer',
@@ -73,9 +115,10 @@ export default function KYCGate({ currentUser, currentUserEmail, onSubmitted, ha
         background: image ? 'rgba(79,156,249,0.08)' : 'rgba(255,255,255,0.03)',
         transition: 'all 0.2s', position: 'relative', overflow: 'hidden',
       }}
-        onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'rgba(79,156,249,0.7)'; }}
+        onClick={() => (side === 'front' ? frontInputRef.current?.click() : backInputRef.current?.click())}
+        onDragOver={e => { e.preventDefault(); }}
         onDragLeave={e => { e.currentTarget.style.borderColor = image ? 'rgba(79,156,249,0.7)' : 'rgba(255,255,255,0.12)'; }}
-        onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f, side); }}
+        onDrop={e => handleDrop(e, side)}
       >
         {image ? (
           <img src={image} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '12px' }} />
@@ -88,22 +131,36 @@ export default function KYCGate({ currentUser, currentUserEmail, onSubmitted, ha
             <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.2)' }}>JPG, PNG · Max 5MB</div>
           </>
         )}
-        <input
-          id={`kyc-${side}`}
-          type="file"
-          accept="image/jpeg,image/png"
-          style={{ display: 'none' }}
-          onChange={e => {
-            const file = e.target.files?.[0];
-            if (file) {
-              handleFile(file, side);
-            }
-            e.target.value = '';
-          }}
-        />
-      </label>
+        {side === 'front' ? (
+          <input
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            ref={frontInputRef}
+            onChange={e => handleFileSelect(e, 'front')}
+          />
+        ) : (
+          <input
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            ref={backInputRef}
+            onChange={e => handleFileSelect(e, 'back')}
+          />
+        )}
+      </div>
       {image && (
-        <button onClick={() => side === 'front' ? setFrontImage(null) : setBackImage(null)}
+        <button onClick={() => {
+          if (side === 'front') {
+            if (frontPreview) URL.revokeObjectURL(frontPreview);
+            setFrontFile(null);
+            setFrontPreview(null);
+          } else {
+            if (backPreview) URL.revokeObjectURL(backPreview);
+            setBackFile(null);
+            setBackPreview(null);
+          }
+        }}
           style={{ marginTop: '8px', background: 'none', border: 'none',
             color: '#ef4444', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}>
           ✖ Remove
@@ -112,7 +169,7 @@ export default function KYCGate({ currentUser, currentUserEmail, onSubmitted, ha
     </div>
   );
 
-  const isReady = idType && frontImage && backImage && !submitting;
+  const isReady = idType && frontFile && backFile && !submitting;
 
   return (
     <div style={{ minHeight: '100vh', background: '#02040a', position: 'relative',
@@ -228,8 +285,8 @@ export default function KYCGate({ currentUser, currentUserEmail, onSubmitted, ha
             Upload ID — Both Sides
           </label>
           <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
-            <UploadZone label="Front Side" image={frontImage} side="front" />
-            <UploadZone label="Back Side"  image={backImage}  side="back"  />
+            <UploadZone label="Front Side" image={frontPreview} side="front" />
+            <UploadZone label="Back Side"  image={backPreview}  side="back"  />
           </div>
 
           {/* Error */}

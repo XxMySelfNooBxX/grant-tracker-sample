@@ -23,6 +23,45 @@ const formatHoldReason = (reason) => {
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 };
+const formatLabel = (text) => {
+  if (!text) return '';
+  return text
+    .toLowerCase()
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+};
+const formatStatus = (status) => {
+  if (!status) return '';
+
+  return status
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, c => c.toUpperCase());
+};
+const getDisplayStatus = (grant) => {
+  const history = grant.holdHistory || [];
+  const last = history[history.length - 1];
+
+  if (last?.action === "WITHDRAWAL_APPROVED") {
+    return "REQUEST_ACCEPTED";
+  }
+  if (last?.action === "WITHDRAWAL_REJECTED") {
+    return "REQUEST_REJECTED";
+  }
+  if (grant.withdrawalRequested) {
+    return "WITHDRAWAL_REQUESTED";
+  }
+
+  return grant.status;
+};
+const isGrantOnHold = (grant) => grant?.status === 'ON_HOLD' || grant?.holdDetails?.isOnHold === true;
+const normalizeGrant = (grant) => ({
+  ...grant,
+  holdReason: grant?.holdReason || grant?.holdDetails?.holdReason || '',
+  holdNote: grant?.holdNote || grant?.holdDetails?.adminNotes || '',
+  withdrawalRequested: Boolean(grant?.withdrawalRequested),
+  withdrawalRequestedAt: grant?.withdrawalRequestedAt || null
+});
 
 const getTier = (grants) => {
   const completed = grants.filter(g => g.status === 'Evaluated' || g.status === 'Fully Disbursed').length;
@@ -190,6 +229,7 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
   const [editScore, setEditScore] = useState('');
   const [editType, setEditType] = useState('');
   const [activityLogs, setActivityLogs] = useState([]);
+  const [grantStateOverrides, setGrantStateOverrides] = useState({});
   const [amountError, setAmountError] = useState('');
   const [editAmountError, setEditAmountError] = useState('');
 
@@ -201,9 +241,19 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
   const [completedCrop, setCompletedCrop] = useState(null);
   const imgRef = useRef(null);
 
-  const myGrants = useMemo(() => grantsList.filter(g => g.userId && g.userId.toLowerCase() === currentUserEmail.toLowerCase()).reverse(), [grantsList, currentUserEmail]);
-  const activeGrants = myGrants.filter(g => ['Phase 1 Approved', 'Awaiting Review', 'Fully Disbursed', 'Blocked'].includes(g.status));
+  const myGrants = useMemo(() => {
+    return grantsList
+      .filter(g => g.userId && g.userId.toLowerCase() === currentUserEmail.toLowerCase())
+      .map(g => {
+        const normalized = normalizeGrant(g);
+        const override = grantStateOverrides[String(g.id)];
+        return override ? { ...normalized, ...override } : normalized;
+      })
+      .reverse();
+  }, [grantsList, currentUserEmail, grantStateOverrides]);
+  const activeGrants = myGrants.filter(g => ['Phase 1 Approved', 'Awaiting Review', 'Fully Disbursed', 'Blocked', 'ON_HOLD'].includes(g.status) || isGrantOnHold(g));
   const pendingGrants = myGrants.filter(g => g.status === 'Pending');
+  const heldGrants = myGrants.filter(isGrantOnHold);
   const tier = getTier(myGrants);
 
   const totalReceived = myGrants.reduce((s, g) => s + (g.disbursedAmount || 0), 0);
@@ -229,6 +279,39 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
     const done = slice.filter(g => g.status === 'Evaluated').length;
     return slice.length > 0 ? Math.round((done / slice.length) * 100) : 0;
   });
+  const holdEvents = myGrants
+    .filter(isGrantOnHold)
+    .map(g => ({
+      type: 'HOLD',
+      message: `Grant put on hold — ${formatHoldReason(g.holdReason)}`,
+      time: g.holdDetails?.holdCreatedAt,
+      adminNote: g.holdNote
+    }));
+  const existingEvents = activityLogs.map(log => {
+    const rawTimestamp = log.timestamp;
+    let time = 'Recently';
+    if (typeof rawTimestamp === 'string') time = rawTimestamp;
+    else if (rawTimestamp instanceof Date) time = rawTimestamp.toLocaleString();
+    else if (rawTimestamp) time = new Date(rawTimestamp).toLocaleString();
+
+    return {
+      ...log,
+      type: 'LOG',
+      time,
+      action: log.action || formatLabel(log.type || 'UPDATE'),
+      details: log.details || log.message || '',
+      admin: log.admin || 'You'
+    };
+  });
+  const activity = [...holdEvents, ...existingEvents];
+  const historyGrants = useMemo(() => {
+    return myGrants.map(g => {
+      const logsForGrant = activityLogs
+        .filter(log => String(log.targetId) === String(g.id))
+        .sort((a, b) => (a.id || 0) - (b.id || 0));
+      return { ...g, logs: logsForGrant };
+    });
+  }, [myGrants, activityLogs]);
 
   useEffect(() => {
     try {
@@ -328,6 +411,38 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
   const cancelGrant = (id) => {
     if (!window.confirm('Cancel this application? This cannot be undone.')) return;
     axios.post(`${API}/cancel-grant`, { id }).then(() => fetchGrants()).catch(() => alert('Cancel failed'));
+  };
+
+  const updateGrantState = (updatedGrant) => {
+    setGrantStateOverrides(prev => ({
+      ...prev,
+      [String(updatedGrant.id)]: {
+        withdrawalRequested: Boolean(updatedGrant.withdrawalRequested),
+        withdrawalRequestedAt: updatedGrant.withdrawalRequestedAt || null
+      }
+    }));
+  };
+
+  const handleWithdrawalRequest = async (grant) => {
+    if (grant.withdrawalRequested) return;
+    if (!window.confirm('This request is under review. Do you want to withdraw?')) return;
+
+    try {
+      const res = await fetch(`${API}/api/applicant/request-withdrawal/${grant.id}`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || data?.message || 'Withdrawal request failed');
+      }
+
+      if (data.success) {
+        updateGrantState(data.grant);
+        fetchGrants();
+      }
+    } catch (err) {
+      console.error('Withdrawal request failed', err);
+    }
   };
 
   const updateProofDraft = (grantId, field, value) => {
@@ -614,20 +729,44 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
             })()}
           </div>
 
+          {heldGrants.length > 0 && (
+            <div style={{
+              border: '1px solid rgba(255,120,0,0.35)',
+              background: 'rgba(255,120,0,0.08)',
+              borderRadius: '12px',
+              padding: '16px',
+              marginBottom: '20px'
+            }}>
+              <div style={{
+                fontWeight: '700',
+                color: '#ff9800',
+                marginBottom: '6px'
+              }}>
+                ⚠ {heldGrants.length} Grant{heldGrants.length > 1 ? 's are' : ' is'} currently on hold
+              </div>
+
+              {heldGrants.map((g, index) => (
+                <div key={index} style={{ fontSize: '13px', color: '#ccc' }}>
+                  • ₹{g.amount} — {formatHoldReason(g.holdReason)}
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="glass-card">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '14px' }}>
               <h3 style={{ color: 'var(--text-heading)', fontFamily: 'DM Serif Display, serif', fontWeight: '400', margin: 0, fontSize: '20px' }}>🔔 Activity Feed</h3>
-              {activityLogs.length > 0 && (
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '600' }}>{activityLogs.length} events</span>
+              {activity.length > 0 && (
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '600' }}>{activity.length} events</span>
               )}
             </div>
 
-            {activityLogs.length === 0 && myGrants.length === 0 ? (
+            {activity.length === 0 && myGrants.length === 0 ? (
               <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '40px 0', fontSize: '15px' }}>
                 <div style={{ fontSize: '40px', marginBottom: '10px' }}>📭</div>
                 No activity yet. Submit your first application to get started!
               </div>
-            ) : activityLogs.length === 0 ? (
+            ) : activity.length === 0 ? (
               <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '28px 0', fontSize: '14px' }}>
                 Activity will appear here as your grants are reviewed.
               </div>
@@ -643,13 +782,15 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
 
                 <div className="timeline-beam-glow" style={{ left: '7px' }} />
 
-                {activityLogs.map((log, i) => {
-                  const act = log.action?.toUpperCase() || '';
+                {activity.map((event, i) => {
+                  const isHold = event.type === 'HOLD';
+                  const eventLabel = isHold ? 'Hold' : formatStatus(event.action || event.type || '');
+                  const act = eventLabel.toUpperCase();
                   const isGood = ['PHASE 1 APPROVED', 'FULLY DISBURSED', 'EVALUATED', 'PROOF UPLOADED', 'IMPACT LOGGED', 'SUBMITTED'].includes(act);
                   const isBad = ['REJECTED', 'BLOCKED', 'BLACKLISTED FILES', 'BLOCKED UPLOAD'].includes(act);
-                  const dotColor = isGood ? 'var(--accent-green)' : isBad ? 'var(--accent-red)' : 'var(--accent-yellow)';
+                  const dotColor = isHold ? '#ff9800' : (isGood ? 'var(--accent-green)' : isBad ? 'var(--accent-red)' : 'var(--accent-yellow)');
                   const isHighlight = ['PHASE 1 APPROVED', 'FULLY DISBURSED', 'EVALUATED'].includes(act);
-                  const isLast = i === activityLogs.length - 1;
+                  const isLast = i === activity.length - 1;
 
                   return (
                     <motion.div
@@ -693,25 +834,53 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
                           : '1px solid transparent',
                         transition: 'background 0.2s',
                       }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
-                          <div style={{ flex: 1 }}>
-                            <span style={{
-                              color: dotColor, fontWeight: '800', fontSize: '12px',
-                              textTransform: 'uppercase', letterSpacing: '0.6px',
-                            }}>
-                              {log.action}
-                            </span>
-                            <span style={{ color: 'var(--text-primary)', fontSize: '13px', marginLeft: '8px', lineHeight: '1.4' }}>
-                              {log.details}
-                            </span>
+                        {isHold ? (
+                          <div style={{
+                            background: 'rgba(255,120,0,0.08)',
+                            borderLeft: '3px solid #ff9800',
+                            padding: '10px',
+                            borderRadius: '8px'
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                              <div style={{ color: '#ff9800', fontWeight: '600' }}>
+                                ⚠ HOLD
+                              </div>
+                              <span style={{ color: 'var(--text-muted)', fontSize: '11px', flexShrink: 0, fontFamily: 'DM Sans', fontWeight: '500' }}>
+                                {event.time?.split(',')[1]?.trim() || event.time || 'Recently'}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
+                              {event.message}
+                            </div>
+                            {event.adminNote && (
+                              <div style={{ fontSize: '12px', color: '#aaa' }}>
+                                Note: {event.adminNote}
+                              </div>
+                            )}
                           </div>
-                          <span style={{ color: 'var(--text-muted)', fontSize: '11px', flexShrink: 0, fontFamily: 'DM Sans', fontWeight: '500' }}>
-                            {log.timestamp?.split(',')[1]?.trim() || log.timestamp}
-                          </span>
-                        </div>
-                        <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '3px' }}>
-                          by <span style={{ color: 'var(--text-secondary)', fontWeight: '600' }}>{log.admin}</span>
-                        </div>
+                        ) : (
+                          <>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                              <div style={{ flex: 1 }}>
+                                <span style={{
+                                  color: dotColor, fontWeight: '800', fontSize: '12px',
+                                  textTransform: 'uppercase', letterSpacing: '0.6px',
+                                }}>
+                                  {eventLabel}
+                                </span>
+                                <span style={{ color: 'var(--text-primary)', fontSize: '13px', marginLeft: '8px', lineHeight: '1.4' }}>
+                                  {event.details}
+                                </span>
+                              </div>
+                              <span style={{ color: 'var(--text-muted)', fontSize: '11px', flexShrink: 0, fontFamily: 'DM Sans', fontWeight: '500' }}>
+                                {event.time?.split(',')[1]?.trim() || event.time}
+                              </span>
+                            </div>
+                            <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '3px' }}>
+                              by <span style={{ color: 'var(--text-secondary)', fontWeight: '600' }}>{event.admin}</span>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </motion.div>
                   );
@@ -733,7 +902,8 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
             const isReview = grant.status === 'Awaiting Review';
             const isFull = grant.status === 'Fully Disbursed';
             const isBlocked = grant.status === 'Blocked';
-            const isOnHold = grant.holdDetails?.isOnHold === true;
+            const isOnHold = isGrantOnHold(grant);
+            const isWithdrawalRequested = grant.withdrawalRequested === true;
             const si = STATUS_ICON[grant.status] || {};
             const draft = proofDrafts[grant.id] || { vendor: '', category: 'Hardware', customCategory: '', amount: '', gst: '', images: [] };
             const imp = impactState[grant.id] || {};
@@ -760,7 +930,14 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
                     <h3 style={{ margin: '0 0 8px 0', color: 'var(--text-heading)', fontSize: '20px' }}>{grant.type} Project</h3>
                     {isOnHold ? (
                       <>
-                        <span style={{ background: 'rgba(255,120,0,0.12)', color: '#f97316', border: '1px solid rgba(255,120,0,0.45)', fontSize: '13px', fontWeight: '800', padding: '5px 14px', borderRadius: '20px', letterSpacing: '0.5px' }}>⚠ ON HOLD</span>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <span style={{ background: 'rgba(255,120,0,0.12)', color: '#f97316', border: '1px solid rgba(255,120,0,0.45)', fontSize: '13px', fontWeight: '800', padding: '5px 14px', borderRadius: '20px', letterSpacing: '0.5px' }}>⚠ ON HOLD</span>
+                          {isWithdrawalRequested && (
+                            <span style={{ background: 'rgba(251,191,36,0.15)', color: '#facc15', border: '1px solid rgba(251,191,36,0.4)', fontSize: '12px', fontWeight: '700', padding: '5px 12px', borderRadius: '20px', letterSpacing: '0.4px' }}>
+                              WITHDRAWAL REQUESTED
+                            </span>
+                          )}
+                        </div>
                         <div style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: '8px' }}>Grant actions are temporarily paused by admin.</div>
                       </>
                     ) : (
@@ -805,10 +982,28 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
                   >
                     <div className="hold-badge" style={{ color: '#f97316', fontWeight: '800', marginBottom: '8px' }}>⚠ ON HOLD</div>
                     <div className="hold-reason" style={{ color: 'var(--text-primary)', marginBottom: '6px' }}>
-                      Reason: {formatHoldReason(grant.holdDetails.holdReason)}
+                      Reason: {formatHoldReason(grant.holdReason)}
                     </div>
                     <div className="hold-note" style={{ color: 'var(--text-muted)' }}>
-                      Admin Note: {grant.holdDetails.adminNotes || 'Please wait for further instructions'}
+                      Admin Note: {grant.holdNote || 'Please wait for further instructions'}
+                    </div>
+                    <div style={{ marginTop: '10px' }}>
+                      <button
+                        onClick={() => handleWithdrawalRequest(grant)}
+                        disabled={isWithdrawalRequested}
+                        style={{
+                          background: 'rgba(239,68,68,0.15)',
+                          border: '1px solid rgba(239,68,68,0.4)',
+                          color: '#ef4444',
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          fontSize: '13px',
+                          cursor: isWithdrawalRequested ? 'not-allowed' : 'pointer',
+                          opacity: isWithdrawalRequested ? 0.5 : 1
+                        }}
+                      >
+                        {isWithdrawalRequested ? 'Withdrawal Requested' : 'Request Withdrawal'}
+                      </button>
                     </div>
                     {grant.holdDetails?.evidenceFiles?.length > 0 && (
                       <div className="hold-evidence">
@@ -1232,9 +1427,13 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
                     </tr>
                   </thead>
                   <tbody>
-                    {myGrants.map((g, i) => {
-                      const isApproved = g.status === 'Evaluated' || g.status === 'Fully Disbursed';
-                      const isRejected = g.status === 'Rejected' || g.status === 'Blocked';
+                    {historyGrants.map((g, i) => {
+                      const isOnHold = isGrantOnHold(g);
+                      const isWithdrawalRequested = g.withdrawalRequested === true;
+                      const displayStatus = getDisplayStatus(g);
+                      const isApproved = ['Evaluated', 'Fully Disbursed', 'REQUEST_ACCEPTED'].includes(displayStatus);
+                      const isRejected = ['Rejected', 'Blocked', 'WITHDRAWN', 'REQUEST_REJECTED'].includes(displayStatus);
+                      const formattedStatus = formatStatus(displayStatus);
                       const rowBg = isApproved ? 'rgba(16,185,129,0.03)' : isRejected ? 'rgba(239,68,68,0.03)' : 'transparent';
                       const rowBorder = isApproved ? 'rgba(16,185,129,0.2)' : isRejected ? 'rgba(239,68,68,0.2)' : 'transparent';
                       const disbursed = g.disbursedAmount || 0;
@@ -1275,11 +1474,60 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
                             {pct > 0 && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px', fontWeight: '600' }}>{pct}% released</div>}
                           </td>
                           <td style={{ padding: '16px 14px' }}>
-                            <span className={`status-badge status-${isApproved ? 'Approved' : isRejected ? 'Rejected' : 'Pending'}`}>{g.status}</span>
-                            {g.status === 'Blocked' && <div style={{ marginTop: '5px', fontSize: '11px', color: '#ef4444', fontWeight: '700' }}>⚠️ Under Investigation</div>}
-                            {g.status === 'Rejected' && g.note && (
-                              <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--accent-red)', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '7px', padding: '5px 10px', maxWidth: '220px', lineHeight: '1.4' }}>
-                                📝 {g.note}
+                            {displayStatus === 'WITHDRAWAL_REQUESTED' ? (
+                              <div style={{
+                                display: 'inline-block',
+                                background: 'rgba(251,191,36,0.15)',
+                                color: '#facc15',
+                                padding: '4px 10px',
+                                borderRadius: '999px',
+                                fontSize: '12px',
+                                fontWeight: '700',
+                                border: '1px solid rgba(251,191,36,0.4)'
+                              }}>
+                                {formattedStatus}
+                              </div>
+                            ) : isOnHold ? (
+                              <div style={{
+                                display: 'inline-block',
+                                background: 'rgba(255,120,0,0.15)',
+                                color: '#ff9800',
+                                padding: '4px 10px',
+                                borderRadius: '999px',
+                                fontSize: '12px',
+                                fontWeight: '600'
+                              }}>
+                                ON HOLD
+                              </div>
+                            ) : (
+                              <>
+                                <span className={`status-badge status-${isApproved ? 'Approved' : isRejected ? 'Rejected' : 'Pending'}`}>{formattedStatus}</span>
+                                {g.status === 'Blocked' && <div style={{ marginTop: '5px', fontSize: '11px', color: '#ef4444', fontWeight: '700' }}>⚠️ Under Investigation</div>}
+                                {g.status === 'Rejected' && g.note && (
+                                  <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--accent-red)', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '7px', padding: '5px 10px', maxWidth: '220px', lineHeight: '1.4' }}>
+                                    📝 {g.note}
+                                  </div>
+                                )}
+                              </>
+                            )}
+                            {isOnHold && (
+                              <div style={{
+                                marginTop: '6px',
+                                background: 'rgba(255,120,0,0.08)',
+                                border: '1px solid rgba(255,120,0,0.25)',
+                                borderRadius: '8px',
+                                padding: '8px',
+                                fontSize: '12px',
+                                color: '#ccc'
+                              }}>
+                                <div>
+                                  Reason: {formatHoldReason(g.holdReason)}
+                                </div>
+                                {g.holdNote && (
+                                  <div style={{ color: '#aaa' }}>
+                                    Note: {g.holdNote}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </td>
@@ -1287,10 +1535,49 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
                             <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap' }}>
                               {g.status === 'Pending' && (
                                 <SpringTooltip text="Edit this application">
-                                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => openEdit(g)} style={{ background: 'var(--bg-info-panel)', color: 'var(--accent-blue)', border: '1px solid var(--border-info-panel)', borderRadius: '7px', padding: '5px 12px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>✏️ Edit</motion.button>
+                                  <motion.button
+                                    whileHover={{ scale: isOnHold ? 1 : 1.05 }}
+                                    whileTap={{ scale: isOnHold ? 1 : 0.95 }}
+                                    onClick={() => openEdit(g)}
+                                    disabled={isOnHold}
+                                    title={isOnHold ? 'Disabled: Grant is on hold by admin' : ''}
+                                    style={{
+                                      background: 'var(--bg-info-panel)',
+                                      color: 'var(--accent-blue)',
+                                      border: '1px solid var(--border-info-panel)',
+                                      borderRadius: '7px',
+                                      padding: '5px 12px',
+                                      fontSize: '12px',
+                                      fontWeight: '700',
+                                      opacity: isOnHold ? 0.5 : 1,
+                                      cursor: isOnHold ? 'not-allowed' : 'pointer'
+                                    }}
+                                  >
+                                    ✏️ Edit
+                                  </motion.button>
                                 </SpringTooltip>
                               )}
-                              {g.status === 'Pending' && (
+                              {isOnHold && (
+                                <SpringTooltip text={isWithdrawalRequested ? 'Withdrawal request already submitted' : 'Request withdrawal while this grant is under hold'}>
+                                  <button
+                                    onClick={() => handleWithdrawalRequest(g)}
+                                    disabled={isWithdrawalRequested}
+                                    style={{
+                                      background: 'rgba(239,68,68,0.15)',
+                                      border: '1px solid rgba(239,68,68,0.4)',
+                                      color: '#ef4444',
+                                      padding: '6px 12px',
+                                      borderRadius: '8px',
+                                      fontSize: '13px',
+                                      cursor: isWithdrawalRequested ? 'not-allowed' : 'pointer',
+                                      opacity: isWithdrawalRequested ? 0.5 : 1
+                                    }}
+                                  >
+                                    {isWithdrawalRequested ? 'Withdrawal Requested' : 'Request Withdrawal'}
+                                  </button>
+                                </SpringTooltip>
+                              )}
+                              {g.status === 'Pending' && !isOnHold && (
                                 <SpringTooltip text="Withdraw this application">
                                   <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => cancelGrant(g.id)} style={{ background: 'rgba(239,68,68,0.08)', color: 'var(--accent-red)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '7px', padding: '5px 12px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>🗑 Cancel</motion.button>
                                 </SpringTooltip>

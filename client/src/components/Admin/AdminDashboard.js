@@ -18,7 +18,7 @@ import {
 import './AdminDashboard.css';
 
 const STANDARD_TYPES = ["Research", "Travel", "Equipment", "Stipend"];
-const ALL_STATUSES = ["Pending", "Phase 1 Approved", "Awaiting Review", "Fully Disbursed", "Evaluated", "Rejected", "Blocked"];
+const ALL_STATUSES = ["Pending", "Phase 1 Approved", "Awaiting Review", "Fully Disbursed", "Evaluated", "Rejected", "Blocked", "WITHDRAWN"];
 const API = 'http://localhost:3001';
 
 const getRisk = (score) => {
@@ -45,11 +45,26 @@ const formatHoldLabel = (value) =>
     .split('_')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
+const formatReason = (reason) => {
+  if (!reason) return '';
+  return reason
+    .toLowerCase()
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+};
+const formatLabel = (text) => {
+  if (!text) return '';
+  return text
+    .toLowerCase()
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+};
+const isWithdrawalRequested = (grant) => grant?.withdrawalRequested === true;
 
 const STATUS_COLORS = {
   All: '#4f9cf9', Pending: '#fbbf24', 'Phase 1 Approved': '#34d399',
   'Awaiting Review': '#f97316', 'Fully Disbursed': '#a78bfa',
-  Evaluated: '#22d3ee', Rejected: '#f87171', Blocked: '#b91c1c'
+  Evaluated: '#22d3ee', Rejected: '#f87171', Blocked: '#b91c1c', WITHDRAWN: '#f59e0b'
 };
 
 const triggerEdgeGlow = (status = 'Approved') => {
@@ -754,6 +769,10 @@ export default function AdminDashboard({ currentUser, grantsList = [], fetchGran
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
 
+  useEffect(() => {
+    fetchGrants();
+  }, [fetchGrants]);
+
   const particlesInit = useCallback(async engine => { await loadSlim(engine); }, []);
   const toggleSelect = (id) => { setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; }); };
   const clearSelection = () => setSelectedIds(new Set());
@@ -801,6 +820,13 @@ export default function AdminDashboard({ currentUser, grantsList = [], fetchGran
   const selRejectable = [...selectedIds].filter(id => ACTION_STATUSES.includes(grantsList.find(g => g.id === id)?.status)).length;
   const fetchLogs = () => axios.get(`${API}/logs`).then(r => setLogs(r.data)).catch(() => { });
   const fetchKyc = () => axios.get(`${API}/verifications`).then(r => setKycList(r.data)).catch(() => {});
+  const addLog = ({ type, message, grantId }) => axios.post(`${API}/api/admin/logs`, {
+    type,
+    message,
+    timestamp: new Date(),
+    grantId,
+    admin: currentUser
+  });
 
 const loadKycImages = (email) => {
   if (kycImages[email]) return;
@@ -829,7 +855,14 @@ const reviewKyc = (email, decision, note = '') => {
   const kycPendingCount = (verifications || []).filter(
     v => v.status === "Pending"
   ).length;
-  const actionQueue = grantsList.filter(g => ACTION_STATUSES.includes(g.status)).map(g => ({ ...g, waitDays: daysSince(g.date) })).sort((a, b) => b.waitDays - a.waitDays);
+  const actionQueue = grantsList
+    .filter(g => ACTION_STATUSES.includes(g.status))
+    .map(g => ({ ...g, waitDays: daysSince(g.date) }))
+    .sort((a, b) => {
+      const withdrawalPriority = Number(isWithdrawalRequested(b)) - Number(isWithdrawalRequested(a));
+      if (withdrawalPriority !== 0) return withdrawalPriority;
+      return b.waitDays - a.waitDays;
+    });
 
   const processedGrants = useMemo(() => {
     let list = [...grantsList];
@@ -933,6 +966,40 @@ const reviewKyc = (email, decision, note = '') => {
       .catch(err => toast.error(err.response?.data?.message || 'Failed to release hold'));
   };
 
+  const updateGrant = (grantId, payload) => {
+    return axios.post(`${API}/api/admin/grants/${grantId}/withdrawal-action`, payload);
+  };
+
+  const handleApproveWithdrawal = (grantId) => {
+    updateGrant(grantId, { action: 'APPROVE', actionBy: currentUser })
+      .then(() => addLog({
+        type: "WITHDRAWAL_APPROVED",
+        message: "Admin approved withdrawal request",
+        grantId
+      }).catch(() => {}))
+      .then(() => {
+        fetchGrants();
+        fetchLogs();
+        toast.success('Withdrawal approved.');
+      })
+      .catch(err => toast.error(err.response?.data?.message || 'Failed to approve withdrawal'));
+  };
+
+  const handleRejectWithdrawal = (grantId) => {
+    updateGrant(grantId, { action: 'REJECT', actionBy: currentUser })
+      .then(() => addLog({
+        type: "WITHDRAWAL_REJECTED",
+        message: "Admin rejected withdrawal request",
+        grantId
+      }).catch(() => {}))
+      .then(() => {
+        fetchGrants();
+        fetchLogs();
+        toast.success('Withdrawal request rejected.');
+      })
+      .catch(err => toast.error(err.response?.data?.message || 'Failed to reject withdrawal'));
+  };
+
   const handleAddPrivateNote = (grantId) => {
     if (!privateNoteText.trim()) return;
     axios.post(`${API}/add-private-note`, { grantId, text: privateNoteText, admin: currentUser })
@@ -1019,6 +1086,7 @@ const reviewKyc = (email, decision, note = '') => {
   const renderGrantActions = (g, options = {}) => {
     const { compact = false, closeModalAfterAction = false } = options;
     if (!g) return null;
+    const withdrawalPending = isWithdrawalRequested(g);
 
     const handleApprove = () => {
       updateStatus(g.id, 'Phase 1 Approved');
@@ -1035,6 +1103,20 @@ const reviewKyc = (email, decision, note = '') => {
       }
       setRejectTarget(g);
       setRejectNote('');
+    };
+    const handleApproveWithdrawalAction = () => {
+      handleApproveWithdrawal(g.id);
+      if (closeModalAfterAction) {
+        setViewingGrant(null);
+        setViewingApplication(null);
+      }
+    };
+    const handleRejectWithdrawalAction = () => {
+      handleRejectWithdrawal(g.id);
+      if (closeModalAfterAction) {
+        setViewingGrant(null);
+        setViewingApplication(null);
+      }
     };
 
     return (
@@ -1063,7 +1145,28 @@ const reviewKyc = (email, decision, note = '') => {
           </motion.button>
         )}
 
-        {!closeModalAfterAction && !g?.holdDetails?.isOnHold && (
+        {withdrawalPending && (
+          <>
+            <motion.button
+              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+              className="action-btn"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(16,185,129,0.12)', color: 'var(--accent-green)', border: '1px solid rgba(16,185,129,0.25)' }}
+              onClick={handleApproveWithdrawalAction}
+            >
+              <CheckCircle size={14} /> Approve Withdrawal
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+              className="action-btn btn-reject"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              onClick={handleRejectWithdrawalAction}
+            >
+              <XCircle size={14} /> Reject Withdrawal
+            </motion.button>
+          </>
+        )}
+
+        {!withdrawalPending && !closeModalAfterAction && !g?.holdDetails?.isOnHold && (
           g.status === "Pending" ||
           g.status === "Awaiting Review" ||
           g.status === "Under Review"
@@ -1078,7 +1181,7 @@ const reviewKyc = (email, decision, note = '') => {
           </motion.button>
         )}
 
-        {!closeModalAfterAction && g?.holdDetails?.isOnHold && (
+        {!withdrawalPending && !closeModalAfterAction && g?.holdDetails?.isOnHold && (
           <motion.button
             whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
             className="action-btn"
@@ -1089,7 +1192,7 @@ const reviewKyc = (email, decision, note = '') => {
           </motion.button>
         )}
 
-        {g.status === 'Pending' && (
+        {!withdrawalPending && g.status === 'Pending' && (
           <>
             <HoldToApproveButton onApprove={handleApprove} />
             {closeModalAfterAction ? (
@@ -1116,7 +1219,7 @@ const reviewKyc = (email, decision, note = '') => {
           </>
         )}
 
-        {!closeModalAfterAction && (g.status === 'Awaiting Review' || g.status === 'Blocked') && (
+        {!withdrawalPending && !closeModalAfterAction && (g.status === 'Awaiting Review' || g.status === 'Blocked') && (
           <SpringTooltip text={g.status === 'Blocked' ? "Open case file and internal notes" : "Analyze receipts & metadata"}>
             <motion.button
               whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
@@ -1129,7 +1232,7 @@ const reviewKyc = (email, decision, note = '') => {
           </SpringTooltip>
         )}
 
-        {!closeModalAfterAction && g.status === 'Phase 1 Approved' && (
+        {!withdrawalPending && !closeModalAfterAction && g.status === 'Phase 1 Approved' && (
           <span style={{ fontSize: '12px', color: 'var(--accent-yellow)', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px', alignSelf: compact ? 'flex-end' : 'auto' }}>
             <Clock size={12} /> Awaiting proof upload…
           </span>
@@ -1320,6 +1423,7 @@ const reviewKyc = (email, decision, note = '') => {
                     const isActionable = ACTION_STATUSES.includes(g.status);
                     const isSelected = selectedIds.has(g.id);
                     const isRevealed = revealedGrantIds.has(g.id);
+                    const withdrawalPending = isWithdrawalRequested(g);
 
                     return (
                       <motion.li
@@ -1383,17 +1487,35 @@ const reviewKyc = (email, decision, note = '') => {
 
                             <span className="risk-badge" style={{ background: risk.bg, color: risk.color, border: `1px solid ${risk.color}30` }}><span className="risk-dot" style={{ background: risk.dot, boxShadow: `0 0 6px ${risk.dot}` }}></span>{risk.label}</span>
                             {wait > 3 && isActionable && <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#f87171', fontWeight: '700', background: 'rgba(248,113,113,0.1)', padding: '3px 8px', borderRadius: '10px', border: '1px solid rgba(248,113,113,0.2)' }}><Clock size={10} /> {wait}d</span>}
-                            <span className={`status-badge status-${g.status === 'Fully Disbursed' || g.status === 'Evaluated' ? 'Approved' : g.status === 'Rejected' || g.status === 'Blocked' ? 'Rejected' : 'Pending'}`}>{g.status === 'Evaluated' ? 'Closed' : g.status}</span>
+                            <span className={`status-badge status-${g.status === 'Fully Disbursed' || g.status === 'Evaluated' ? 'Approved' : g.status === 'Rejected' || g.status === 'Blocked' || g.status === 'WITHDRAWN' ? 'Rejected' : 'Pending'}`}>{g.status === 'Evaluated' ? 'Closed' : g.status}</span>
+                            {withdrawalPending && (
+                              <span style={{
+                                background: 'rgba(251,191,36,0.15)',
+                                color: '#facc15',
+                                border: '1px solid rgba(251,191,36,0.4)',
+                                padding: '4px 8px',
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                                marginLeft: '8px'
+                              }}>
+                                WITHDRAWAL REQUESTED
+                              </span>
+                            )}
                           </div>
                           <div style={{ textAlign: 'right', flexShrink: 0 }}>
                             <div style={{ color: 'var(--accent-blue)', fontWeight: '800', fontSize: '16px' }}>₹{(g.disbursedAmount || 0).toLocaleString()}</div>
                             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>of ₹{g.amount.toLocaleString()}</div>
                           </div>
                         </div>
+                        {withdrawalPending && (
+                          <div style={{ color: '#facc15', fontSize: '13px', marginTop: '6px' }}>
+                            ⚠️ User has requested withdrawal during review
+                          </div>
+                        )}
                         {g.note && <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(248,113,113,0.07)', border: '1px solid rgba(248,113,113,0.18)', borderRadius: '8px', padding: '7px 12px', fontSize: '12px', color: 'var(--accent-red)' }}><FileSignature size={14} /> "{g.note}"</div>}
                         {g?.holdDetails?.isOnHold && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: '8px', padding: '7px 12px', fontSize: '12px', color: 'var(--accent-yellow)' }}>
-                            <ShieldAlert size={14} /> Reason: {g.holdDetails?.holdReason}
+                            <ShieldAlert size={14} /> Reason: {formatReason(g.holdDetails?.holdReason)}
                           </div>
                         )}
                         <div className="disbursal-track"><div className={`disbursal-fill${g.amount > 0 && (g.disbursedAmount || 0) >= g.amount ? ' full' : ''}`} style={{ width: `${g.amount > 0 ? ((g.disbursedAmount || 0) / g.amount) * 100 : 0}%` }}></div></div>
@@ -1451,6 +1573,7 @@ const reviewKyc = (email, decision, note = '') => {
                       const risk = getRisk(g.creditScore);
                       const urgent = g.waitDays > 5;
                       const hasFraudAlert = g.proofs?.some(p => p.forensics?.some(f => f.status === 'FLAGGED'));
+                      const withdrawalPending = isWithdrawalRequested(g);
 
                       return (
                         <motion.li key={g.id}
@@ -1472,8 +1595,26 @@ const reviewKyc = (email, decision, note = '') => {
                                 {g.strikes > 0 && <span style={{ display: 'flex', alignItems: 'center', gap: '4px', background: g.strikes >= 3 ? '#7f1d1d' : '#9a3412', color: 'white', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}><AlertTriangle size={10} /> {g.strikes}/3 STRIKES</span>}
 
                                 <span className="risk-badge" style={{ background: risk.bg, color: risk.color, border: `1px solid ${risk.color}30` }}><span className="risk-dot" style={{ background: risk.dot }}></span>{risk.label}</span>
+                                {withdrawalPending && (
+                                  <span style={{
+                                    background: 'rgba(251,191,36,0.15)',
+                                    color: '#facc15',
+                                    border: '1px solid rgba(251,191,36,0.4)',
+                                    padding: '4px 8px',
+                                    borderRadius: '6px',
+                                    fontSize: '12px',
+                                    marginLeft: '8px'
+                                  }}>
+                                    WITHDRAWAL REQUESTED
+                                  </span>
+                                )}
                               </div>
                               <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>₹{g.amount.toLocaleString()} · Applied {g.date}</div>
+                              {withdrawalPending && (
+                                <div style={{ color: '#facc15', fontSize: '13px', marginTop: '6px' }}>
+                                  ⚠️ User has requested withdrawal during review
+                                </div>
+                              )}
                               <div style={{ marginTop: '8px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
 
                                 {hasFraudAlert ? (
@@ -1484,7 +1625,7 @@ const reviewKyc = (email, decision, note = '') => {
                                 <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Status: <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>{g.status}</span></span>
                                 {g?.holdDetails?.isOnHold && (
                                   <span style={{ fontSize: '12px', color: 'var(--accent-yellow)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <ShieldAlert size={12} /> Reason: {g.holdDetails?.holdReason}
+                                    <ShieldAlert size={12} /> Reason: {formatReason(g.holdDetails?.holdReason)}
                                   </span>
                                 )}
                               </div>
@@ -1661,7 +1802,7 @@ const reviewKyc = (email, decision, note = '') => {
                 <div style={{
                   background: g.status === 'Pending'
                     ? 'linear-gradient(135deg,rgba(30,58,138,0.9),rgba(37,99,235,0.75))'
-                    : g.status === 'Rejected' || g.status === 'Blocked'
+                    : g.status === 'Rejected' || g.status === 'Blocked' || g.status === 'WITHDRAWN'
                       ? 'linear-gradient(135deg,rgba(127,29,29,0.9),rgba(185,28,28,0.75))'
                       : 'linear-gradient(135deg,rgba(4,120,87,0.85),rgba(16,185,129,0.65))',
                   padding: '20px 28px',
@@ -1681,9 +1822,22 @@ const reviewKyc = (email, decision, note = '') => {
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span className={`status-badge status-${g.status === 'Evaluated' || g.status === 'Fully Disbursed' ? 'Approved' : g.status === 'Rejected' || g.status === 'Blocked' ? 'Rejected' : 'Pending'}`} style={{ fontSize: '10px' }}>
+                    <span className={`status-badge status-${g.status === 'Evaluated' || g.status === 'Fully Disbursed' ? 'Approved' : g.status === 'Rejected' || g.status === 'Blocked' || g.status === 'WITHDRAWN' ? 'Rejected' : 'Pending'}`} style={{ fontSize: '10px' }}>
                       {g.status}
                     </span>
+                    {isWithdrawalRequested(g) && (
+                      <span style={{
+                        background: 'rgba(251,191,36,0.15)',
+                        color: '#facc15',
+                        border: '1px solid rgba(251,191,36,0.4)',
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        marginLeft: '8px'
+                      }}>
+                        WITHDRAWAL REQUESTED
+                      </span>
+                    )}
                     <button
                       onClick={() => setViewingApplication(null)}
                       style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', width: '30px', height: '30px', borderRadius: '50%', cursor: 'pointer', fontSize: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -1692,6 +1846,11 @@ const reviewKyc = (email, decision, note = '') => {
                 </div>
 
                 <div style={{ background: 'var(--bg-surface)', padding: '26px 28px', overflowY: 'auto', maxHeight: '70vh' }}>
+                  {isWithdrawalRequested(g) && (
+                    <div style={{ color: '#facc15', fontSize: '13px', marginTop: '6px', marginBottom: '12px' }}>
+                      ⚠️ User has requested withdrawal during review
+                    </div>
+                  )}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '22px' }}>
                     <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '14px', padding: '16px' }}>
                       <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700', marginBottom: '8px' }}>Applicant</div>
@@ -1887,36 +2046,55 @@ const reviewKyc = (email, decision, note = '') => {
       <AnimatePresence>
         {holdHistoryTarget && (
           <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <motion.div className="glass-modal-content" style={{ maxWidth: '560px', width: '100%' }} initial={{ scale: 0.92, y: 20, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.92, y: 20, opacity: 0 }}>
+            <motion.div className="glass-modal-content" style={{ maxWidth: '560px', width: '100%', padding: '22px 24px' }} initial={{ scale: 0.92, y: 20, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.92, y: 20, opacity: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-                <h2 style={{ margin: 0, fontSize: '20px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '600', letterSpacing: '0.3px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <ScrollText size={20} /> Hold History
                 </h2>
                 <button onClick={closeHoldHistoryModal} style={{ background: 'none', border: 'none', fontSize: '26px', color: 'var(--text-muted)', cursor: 'pointer' }}>×</button>
               </div>
-              <div style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '10px' }}>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '14px', opacity: 0.75, marginTop: '4px', marginBottom: '14px' }}>
                 {holdHistoryTarget.source} • {holdHistoryTarget.type}
               </div>
+              {(() => {
+                const baseHistory = holdHistoryTarget.holdDetails?.holdHistory || [];
+                const historyItems = [...baseHistory];
+                if (isWithdrawalRequested(holdHistoryTarget) && !historyItems.some(item => item?.action === 'WITHDRAWAL_REQUESTED')) {
+                  historyItems.unshift({
+                    action: 'WITHDRAWAL_REQUESTED',
+                    reason: 'Applicant requested withdrawal during hold',
+                    category: 'WITHDRAWAL',
+                    timestamp: holdHistoryTarget.withdrawalRequestedAt || new Date().toISOString()
+                  });
+                }
+                return (
               <div className="dark-scroll" style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: '6px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {(holdHistoryTarget.holdDetails?.holdHistory || []).length === 0 ? (
-                  <div style={{ color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center', padding: '22px 8px' }}>
+                {historyItems.length === 0 ? (
+                  <div style={{ color: 'var(--text-muted)', fontSize: '13.5px', textAlign: 'center', padding: '22px 8px', lineHeight: '1.6' }}>
                     No hold history available.
                   </div>
                 ) : (
-                  (holdHistoryTarget.holdDetails?.holdHistory || []).map((item, idx) => {
+                  historyItems.map((item, idx) => {
                     const t = item?.timestamp ? new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--';
                     const evidenceCount = Array.isArray(item?.evidenceFiles) ? item.evidenceFiles.length : 0;
+                    const reasonText = item?.action === 'WITHDRAWAL_REQUESTED'
+                      ? 'Applicant requested withdrawal during hold'
+                      : (item?.reason ? formatReason(item.reason) : '-');
                     return (
-                      <div key={`${item?.timestamp || idx}-${idx}`} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '10px 12px' }}>
-                        <div style={{ fontSize: '12px', color: 'var(--accent-blue)', fontWeight: '700', marginBottom: '4px' }}>[{t}] {item?.action || 'HOLD_EVENT'}</div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Reason: {item?.reason || '-'}</div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>Category: {item?.category ? formatHoldLabel(item.category) : '-'}</div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Evidence: {evidenceCount} file{evidenceCount !== 1 ? 's' : ''}</div>
+                      <div key={`${item?.timestamp || idx}-${idx}`} style={{ padding: '16px 18px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '8px', lineHeight: '1.6' }}>
+                        <div style={{ fontSize: '14.5px', fontWeight: '600', color: '#60a5fa' }}>[{t}] {formatLabel(item?.action || 'HOLD_EVENT')}</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div style={{ fontSize: '13.5px', lineHeight: '1.6', color: 'rgba(255,255,255,0.85)' }}><span style={{ opacity: 0.6 }}>Reason:</span> {reasonText}</div>
+                          <div style={{ fontSize: '13.5px', lineHeight: '1.6', color: 'rgba(255,255,255,0.85)' }}><span style={{ opacity: 0.6 }}>Category:</span> {item?.category ? formatLabel(item.category) : '-'}</div>
+                          <div style={{ fontSize: '13.5px', lineHeight: '1.6', color: 'rgba(255,255,255,0.85)' }}><span style={{ opacity: 0.6 }}>Evidence:</span> {evidenceCount} file{evidenceCount !== 1 ? 's' : ''}</div>
+                        </div>
                       </div>
                     );
                   })
                 )}
               </div>
+                );
+              })()}
             </motion.div>
           </motion.div>
         )}
@@ -2048,7 +2226,7 @@ const reviewKyc = (email, decision, note = '') => {
                   {ag.map((g, i) => {
                     const risk = getRisk(g.creditScore);
                     const isGood = g.status === 'Evaluated' || g.status === 'Fully Disbursed';
-                    const isBad = g.status === 'Rejected' || g.status === 'Blocked';
+                    const isBad = g.status === 'Rejected' || g.status === 'Blocked' || g.status === 'WITHDRAWN';
                     return (
                       <motion.div
                         key={i}
