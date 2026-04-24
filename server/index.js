@@ -9,6 +9,11 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use('/uploads', express.static('uploads'));
 app.use(cors());
+app.use((req, res, next) => {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
+  next();
+});
 
 // ── email configuration ───────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
@@ -848,7 +853,7 @@ app.post('/submit-impact', (req, res) => {
   res.json(grant);
 });
 
-// ══════════════════════════════════════════════════════════════════════════════
+/* // ══════════════════════════════════════════════════════════════════════════════
 // 🚀 MOCK DATA INJECTION SCRIPT (RUNS ON SERVER START)
 // ══════════════════════════════════════════════════════════════════════════════
 const injectMockData = () => {
@@ -937,7 +942,7 @@ const injectMockData = () => {
 // Fire the injection script right before startup
 injectMockData();
 
-// ══════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════ */
 
 
 const server = app.listen(3001, () => {

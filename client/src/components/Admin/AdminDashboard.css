@@ -330,7 +330,16 @@
   color: var(--accent-yellow);
   border: 1px solid rgba(251, 191, 36, 0.2);
 }
-
+.status-OnHold {
+  background: linear-gradient(110deg,
+      rgba(255, 152, 0, 0.1) 20%,
+      rgba(255, 152, 0, 0.35) 40%, /* The bright orange shine */
+      rgba(255, 152, 0, 0.1) 60%);
+  background-size: 200% auto;
+  animation: badge-shimmer 3s infinite linear;
+  color: #ff9800;
+  border: 1px solid rgba(255, 152, 0, 0.3);
+}
 .category-tag {
   font-size: 10px;
   font-weight: 700;

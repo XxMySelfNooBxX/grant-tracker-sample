@@ -215,6 +215,13 @@ const TabBtn = ({ id, label, badge, activeTab, setActiveTab }) => (
 
 export default function ApplicantDashboard({ currentUser, currentUserEmail, grantsList = [], fetchGrants, handleLogout, isDarkMode, toggleTheme }) {
   const [activeTab, setActiveTab] = useState('overview');
+  
+  useEffect(() => {
+    if (activeTab === "history") {
+      fetchGrants(); 
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
   const [source, setSource] = useState(currentUser);
   const [amount, setAmount] = useState('');
   const [creditScore, setCreditScore] = useState('');
@@ -359,13 +366,11 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
     if (!bypassMode && reqAmount > eligibility.limit) return alert(`🚫 Max allowed: ₹${eligibility.limit.toLocaleString()}`);
     const finalType = type === 'Other' ? customType : type;
     axios.post(`${API}/add-grant`, { source, amount: reqAmount, type: finalType, creditScore, userId: currentUserEmail })
-      .then(() => {
-        return fetchGrants(); // 1. Wait for the new ledger data to sync
-      })
+      .then(() => fetchGrants())
       .then(() => {
         setAmount(''); setCreditScore(''); setType('Research'); setCustomType(''); setReapplyFrom(null); setAmountError('');
         triggerConfetti();
-        fetchGrants().then(() => setActiveTab('history'));
+        setActiveTab('history');
       })
       .catch(err => {
         if (err.response?.data?.message?.includes('BLACKLISTED')) {
@@ -1005,26 +1010,33 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
                         {isWithdrawalRequested ? 'Withdrawal Requested' : 'Request Withdrawal'}
                       </button>
                     </div>
-                    {grant.holdDetails?.evidenceFiles?.length > 0 && (
-                      <div className="hold-evidence">
-                        <div style={{ marginTop: '10px', fontSize: '12px', color: '#aaa' }}>
-                          Evidence Uploaded by Admin:
-                        </div>
 
+                    {grant.holdDetails?.evidenceFiles?.length > 0 && (
+                      <div className="hold-evidence" style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed rgba(251,191,36,0.3)' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--accent-yellow)', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '800', marginBottom: '8px' }}>
+                          📎 Evidence Attached by Admin
+                        </div>
                         <div style={{ display: 'flex', gap: '10px', marginTop: '8px', flexWrap: 'wrap' }}>
-                          {grant.holdDetails.evidenceFiles.map((file, index) => (
+                          {grant.holdDetails.evidenceFiles.map((fileData, index) => (
                             <img
                               key={index}
-                              src={`http://localhost:3001/uploads/${file}`}
-                              alt="evidence"
-                              onError={(e) => e.target.style.display = 'none'}
+                              src={fileData}
+                              alt={`Admin Evidence ${index + 1}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEnlargedImage(fileData);
+                              }}
                               style={{
-                                width: '120px',
-                                height: '80px',
+                                width: '64px',
+                                height: '64px',
                                 objectFit: 'cover',
                                 borderRadius: '8px',
-                                border: '1px solid rgba(255,255,255,0.1)'
+                                border: '2px solid rgba(251,191,36,0.4)',
+                                cursor: 'zoom-in',
+                                transition: 'transform 0.2s'
                               }}
+                              onMouseOver={e => e.currentTarget.style.transform = 'scale(1.05)'}
+                              onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
                             />
                           ))}
                         </div>
@@ -1441,14 +1453,13 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
 
                       return (
                         <motion.tr
-                          key={g.id}
-                          initial={{ opacity: 0, x: -20 }}
-                          whileInView={{ opacity: 1, x: 0 }}
-                          viewport={{ once: true, margin: '-20px' }}
-                          transition={{ duration: 0.35, delay: i < 6 ? i * 0.07 : 0, ease: 'easeOut' }}
-                          className="table-row"
-                          style={{ borderLeft: `3px solid ${rowBorder}`, background: rowBg }}
-                        >
+  key={g.id}
+  initial={{ opacity: 0, x: -20 }}
+  animate={{ opacity: 1, x: 0 }}
+  transition={{ duration: 0.35, delay: i < 6 ? i * 0.07 : 0, ease: 'easeOut' }}
+  className="table-row"
+  style={{ borderLeft: `3px solid ${rowBorder}`, background: rowBg }}
+>
                           <td style={{ padding: '16px 14px 16px 16px', color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>{g.date}</td>
                           <td style={{ padding: '16px 14px' }}>
                             <span className={`category-tag ${getTagClass(g.type)}`}>{g.type}</span>

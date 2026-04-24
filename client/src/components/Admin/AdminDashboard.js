@@ -59,7 +59,27 @@ const formatLabel = (text) => {
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
 };
+const formatStatus = (status) => {
+  if (!status) return '';
+  return status
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, c => c.toUpperCase());
+};
 const isWithdrawalRequested = (grant) => grant?.withdrawalRequested === true;
+const getAdminDisplayStatus = (grant) => {
+  if (grant.withdrawalRequested) {
+    return "WITHDRAWAL_REQUESTED";
+  }
+  if (grant.status === "REQUEST_ACCEPTED") {
+    return "WITHDRAWN";
+  }
+  // NEW: Immediately check if it's on hold, regardless of other statuses
+  if (grant?.holdDetails?.isOnHold) {
+    return "ON_HOLD";
+  }
+  return grant.status;
+};
 
 const STATUS_COLORS = {
   All: '#4f9cf9', Pending: '#fbbf24', 'Phase 1 Approved': '#34d399',
@@ -1424,6 +1444,7 @@ const reviewKyc = (email, decision, note = '') => {
                     const isSelected = selectedIds.has(g.id);
                     const isRevealed = revealedGrantIds.has(g.id);
                     const withdrawalPending = isWithdrawalRequested(g);
+                    const adminStatus = getAdminDisplayStatus(g);
 
                     return (
                       <motion.li
@@ -1487,7 +1508,15 @@ const reviewKyc = (email, decision, note = '') => {
 
                             <span className="risk-badge" style={{ background: risk.bg, color: risk.color, border: `1px solid ${risk.color}30` }}><span className="risk-dot" style={{ background: risk.dot, boxShadow: `0 0 6px ${risk.dot}` }}></span>{risk.label}</span>
                             {wait > 3 && isActionable && <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: '#f87171', fontWeight: '700', background: 'rgba(248,113,113,0.1)', padding: '3px 8px', borderRadius: '10px', border: '1px solid rgba(248,113,113,0.2)' }}><Clock size={10} /> {wait}d</span>}
-                            <span className={`status-badge status-${g.status === 'Fully Disbursed' || g.status === 'Evaluated' ? 'Approved' : g.status === 'Rejected' || g.status === 'Blocked' || g.status === 'WITHDRAWN' ? 'Rejected' : 'Pending'}`}>{g.status === 'Evaluated' ? 'Closed' : g.status}</span>
+                            {g?.holdDetails?.isOnHold ? (
+  <span className="status-badge status-OnHold">
+    ⚠ ON HOLD
+  </span>
+) : (
+  <span className={`status-badge status-${adminStatus === 'Fully Disbursed' || adminStatus === 'Evaluated' ? 'Approved' : adminStatus === 'Rejected' || adminStatus === 'Blocked' || adminStatus === 'WITHDRAWN' ? 'Rejected' : 'Pending'}`}>
+    {adminStatus === 'Evaluated' ? 'Closed' : formatStatus(adminStatus)}
+  </span>
+)}
                             {withdrawalPending && (
                               <span style={{
                                 background: 'rgba(251,191,36,0.15)',
@@ -1574,6 +1603,7 @@ const reviewKyc = (email, decision, note = '') => {
                       const urgent = g.waitDays > 5;
                       const hasFraudAlert = g.proofs?.some(p => p.forensics?.some(f => f.status === 'FLAGGED'));
                       const withdrawalPending = isWithdrawalRequested(g);
+                      const adminStatus = getAdminDisplayStatus(g);
 
                       return (
                         <motion.li key={g.id}
@@ -1622,7 +1652,7 @@ const reviewKyc = (email, decision, note = '') => {
                                 ) : (
                                   <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: '800', padding: '3px 10px', borderRadius: '10px', background: urgent ? 'rgba(248,113,113,0.15)' : 'rgba(251,191,36,0.12)', color: urgent ? '#f87171' : '#fcd34d', border: `1px solid ${urgent ? 'rgba(248,113,113,0.3)' : 'rgba(251,191,36,0.25)'}` }}><Clock size={12} /> {g.waitDays}d waiting</span>
                                 )}
-                                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Status: <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>{g.status}</span></span>
+                                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Status: <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>{formatStatus(adminStatus)}</span></span>
                                 {g?.holdDetails?.isOnHold && (
                                   <span style={{ fontSize: '12px', color: 'var(--accent-yellow)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                     <ShieldAlert size={12} /> Reason: {formatReason(g.holdDetails?.holdReason)}
@@ -1778,6 +1808,7 @@ const reviewKyc = (email, decision, note = '') => {
           const g = viewingApplication;
           const risk = getRisk(g.creditScore);
           const wait = daysSince(g.date);
+          const adminStatus = getAdminDisplayStatus(g);
           const disbPct = g.amount > 0 ? Math.round(((g.disbursedAmount || 0) / g.amount) * 100) : 0;
           const CIRC_R = 28;
           const CIRC = 2 * Math.PI * CIRC_R;
@@ -1800,9 +1831,9 @@ const reviewKyc = (email, decision, note = '') => {
                 style={{ maxWidth: '640px', width: '100%', borderRadius: '22px', overflow: 'hidden', boxShadow: '0 32px 80px rgba(0,0,0,0.7)' }}
               >
                 <div style={{
-                  background: g.status === 'Pending'
+                  background: adminStatus === 'Pending'
                     ? 'linear-gradient(135deg,rgba(30,58,138,0.9),rgba(37,99,235,0.75))'
-                    : g.status === 'Rejected' || g.status === 'Blocked' || g.status === 'WITHDRAWN'
+                    : adminStatus === 'Rejected' || adminStatus === 'Blocked' || adminStatus === 'WITHDRAWN'
                       ? 'linear-gradient(135deg,rgba(127,29,29,0.9),rgba(185,28,28,0.75))'
                       : 'linear-gradient(135deg,rgba(4,120,87,0.85),rgba(16,185,129,0.65))',
                   padding: '20px 28px',
@@ -1822,8 +1853,8 @@ const reviewKyc = (email, decision, note = '') => {
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span className={`status-badge status-${g.status === 'Evaluated' || g.status === 'Fully Disbursed' ? 'Approved' : g.status === 'Rejected' || g.status === 'Blocked' || g.status === 'WITHDRAWN' ? 'Rejected' : 'Pending'}`} style={{ fontSize: '10px' }}>
-                      {g.status}
+                    <span className={`status-badge status-${adminStatus === 'Evaluated' || adminStatus === 'Fully Disbursed' ? 'Approved' : adminStatus === 'Rejected' || adminStatus === 'Blocked' || adminStatus === 'WITHDRAWN' ? 'Rejected' : 'Pending'}`} style={{ fontSize: '10px' }}>
+                      {formatStatus(adminStatus)}
                     </span>
                     {isWithdrawalRequested(g) && (
                       <span style={{
@@ -2225,8 +2256,9 @@ const reviewKyc = (email, decision, note = '') => {
                 <div style={{ maxHeight: '280px', overflowY: 'auto' }} className="dark-scroll">
                   {ag.map((g, i) => {
                     const risk = getRisk(g.creditScore);
-                    const isGood = g.status === 'Evaluated' || g.status === 'Fully Disbursed';
-                    const isBad = g.status === 'Rejected' || g.status === 'Blocked' || g.status === 'WITHDRAWN';
+                    const adminStatus = getAdminDisplayStatus(g);
+                    const isGood = adminStatus === 'Evaluated' || adminStatus === 'Fully Disbursed';
+                    const isBad = adminStatus === 'Rejected' || adminStatus === 'Blocked' || adminStatus === 'WITHDRAWN';
                     return (
                       <motion.div
                         key={i}
@@ -2243,7 +2275,7 @@ const reviewKyc = (email, decision, note = '') => {
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '4px' }}>
                             <span className={`category-tag ${STANDARD_TYPES.includes(g.type) ? `cat-${g.type}` : 'cat-Other'}`}>{g.type}</span>
-                            <span className={`status-badge status-${isGood ? 'Approved' : isBad ? 'Rejected' : 'Pending'}`}>{g.status}</span>
+                            <span className={`status-badge status-${isGood ? 'Approved' : isBad ? 'Rejected' : 'Pending'}`}>{formatStatus(adminStatus)}</span>
                             <span className="risk-badge" style={{ background: risk.bg, color: risk.color, border: `1px solid ${risk.color}30`, fontSize: '10px', padding: '2px 8px' }}>
                               <span className="risk-dot" style={{ background: risk.dot, width: '5px', height: '5px' }}></span>{risk.label}
                             </span>
