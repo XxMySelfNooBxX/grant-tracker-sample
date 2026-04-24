@@ -1010,35 +1010,42 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
                         {isWithdrawalRequested ? 'Withdrawal Requested' : 'Request Withdrawal'}
                       </button>
                     </div>
-
                     {grant.holdDetails?.evidenceFiles?.length > 0 && (
                       <div className="hold-evidence" style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed rgba(251,191,36,0.3)' }}>
                         <div style={{ fontSize: '11px', color: 'var(--accent-yellow)', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '800', marginBottom: '8px' }}>
                           📎 Evidence Attached by Admin
                         </div>
                         <div style={{ display: 'flex', gap: '10px', marginTop: '8px', flexWrap: 'wrap' }}>
-                          {grant.holdDetails.evidenceFiles.map((fileData, index) => (
-                            <img
-                              key={index}
-                              src={fileData}
-                              alt={`Admin Evidence ${index + 1}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEnlargedImage(fileData);
-                              }}
-                              style={{
-                                width: '64px',
-                                height: '64px',
-                                objectFit: 'cover',
-                                borderRadius: '8px',
-                                border: '2px solid rgba(251,191,36,0.4)',
-                                cursor: 'zoom-in',
-                                transition: 'transform 0.2s'
-                              }}
-                              onMouseOver={e => e.currentTarget.style.transform = 'scale(1.05)'}
-                              onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
-                            />
-                          ))}
+                          {grant.holdDetails.evidenceFiles.map((fileData, index) => {
+                            // Smart check: Is it a new Base64 image or an old filename?
+                            const imageSrc = fileData.startsWith('data:') 
+                              ? fileData 
+                              : `http://localhost:3001/uploads/${fileData}`;
+
+                            return (
+                              <img
+                                key={index}
+                                src={imageSrc}
+                                alt={`Admin Evidence ${index + 1}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEnlargedImage(imageSrc);
+                                }}
+                                onError={(e) => e.target.style.display = 'none'}
+                                style={{
+                                  width: '64px',
+                                  height: '64px',
+                                  objectFit: 'cover',
+                                  borderRadius: '8px',
+                                  border: '2px solid rgba(251,191,36,0.4)',
+                                  cursor: 'zoom-in',
+                                  transition: 'transform 0.2s'
+                                }}
+                                onMouseOver={e => e.currentTarget.style.transform = 'scale(1.05)'}
+                                onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
+                              />
+                            );
+                          })}
                         </div>
                       </div>
                     )}

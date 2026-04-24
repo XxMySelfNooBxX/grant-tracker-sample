@@ -959,23 +959,38 @@ const reviewKyc = (email, decision, note = '') => {
     setHoldHistoryTarget(null);
   };
 
-  const confirmGrantHold = () => {
+  const confirmGrantHold = async () => {
     if (!holdTarget) return;
+    
     const resolvedReason = holdCategory === "OTHER"
       ? customReasonInput
       : holdCategory;
-    axios.post(`${API}/api/admin/grants/${holdTarget.id}/hold`, {
-      holdStatus: "SOFT_HOLD",
-      holdReason: resolvedReason,
-      holdCategory: holdCategory,
-      adminNotes: holdAdminNotesInput,
-      evidenceFiles: holdEvidenceFiles.map(file => file.name)
-    })
-      .then(() => {
-        fetchGrants();
-        closeHoldModal();
-      })
-      .catch(err => toast.error(err.response?.data?.message || 'Failed to put grant on hold'));
+
+    // Convert files to Base64 to save the actual image data
+    const toBase64 = (file) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = error => reject(error);
+    });
+
+    try {
+      // Wait for all selected files to be converted to Base64 strings
+      const base64Files = await Promise.all(holdEvidenceFiles.map(f => toBase64(f)));
+
+      await axios.post(`${API}/api/admin/grants/${holdTarget.id}/hold`, {
+        holdStatus: "SOFT_HOLD",
+        holdReason: resolvedReason,
+        holdCategory: holdCategory,
+        adminNotes: holdAdminNotesInput,
+        evidenceFiles: base64Files // Sending the actual image data now!
+      });
+      
+      fetchGrants();
+      closeHoldModal();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to put grant on hold');
+    }
   };
 
   const releaseGrantHold = (grant) => {
