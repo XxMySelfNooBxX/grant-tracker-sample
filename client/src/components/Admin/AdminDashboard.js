@@ -1227,7 +1227,7 @@ const reviewKyc = (email, decision, note = '') => {
           </motion.button>
         )}
 
-        {!withdrawalPending && g.status === 'Pending' && (
+        {!withdrawalPending && !g?.holdDetails?.isOnHold && g.status === 'Pending' && (
           <>
             <HoldToApproveButton onApprove={handleApprove} />
             {closeModalAfterAction ? (
