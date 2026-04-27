@@ -13,7 +13,7 @@ import {
   LayoutDashboard, Zap, Download, ScrollText, CheckCircle, XCircle,
   FileSearch, ShieldAlert, Rocket, Search, AlertTriangle, Clock,
   User, Eye, Receipt, ShieldCheck, FileText, CheckCircle2,
-  FileSignature, Fingerprint, ScanLine, Building2,BadgeCheck
+  FileSignature, Fingerprint, Building2,BadgeCheck
 } from 'lucide-react';
 import './AdminDashboard.css';
 
@@ -705,7 +705,6 @@ export default function AdminDashboard({ currentUser, grantsList = [], fetchGran
   const [bulkRejectNote, setBulkRejectNote] = useState('');
   const [showBulkReject, setShowBulkReject] = useState(false);
 
-  const [xrayMode, setXrayMode] = useState(false);
   const [verifyingVendor, setVerifyingVendor] = useState(null);
   const [vendorStatus, setVendorStatus] = useState({});
   const [revealedGrantIds, setRevealedGrantIds] = useState(new Set());
@@ -749,7 +748,6 @@ export default function AdminDashboard({ currentUser, grantsList = [], fetchGran
           setShowBulkReject(false);
         } else if (viewingGrant) {
           setViewingGrant(null);
-          setXrayMode(false);
         } else if (viewingApplication) {
           setViewingApplication(null);
         } else if (viewingImpact) {
@@ -925,7 +923,7 @@ const reviewKyc = (email, decision, note = '') => {
     const adminEmail = localStorage.getItem('currentUserEmail') || 'shauryacocid@gmail.com';
     axios.post(`${API}/update-status`, { id: Number(id), status: newStatus, actionBy: currentUser, note, otp: otpCode, adminEmail })
       .then(() => {
-        fetchGrants(); setViewingGrant(null); setRejectTarget(null); setRejectNote(''); setShowOtpModal(false); setOtpInput(''); setOtpError(''); setXrayMode(false);
+        fetchGrants(); setViewingGrant(null); setRejectTarget(null); setRejectNote(''); setShowOtpModal(false); setOtpInput(''); setOtpError('');
       })
       .catch(err => {
         if (newStatus === 'Fully Disbursed') setOtpError(err.response?.data?.message || 'Invalid OTP');
@@ -2347,11 +2345,6 @@ const reviewKyc = (email, decision, note = '') => {
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <SpringTooltip text="Toggle Forensics X-ray Mode">
-                    <button onClick={() => setXrayMode(!xrayMode)} style={{ background: xrayMode ? 'white' : 'transparent', border: '1px solid white', color: xrayMode ? (viewingGrant.status === 'Blocked' ? '#b91c1c' : '#047857') : 'white', borderRadius: '8px', padding: '8px 14px', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', transition: 'all 0.2s' }}>
-                      <ScanLine size={14} /> X-RAY {xrayMode ? 'ON' : 'OFF'}
-                    </button>
-                  </SpringTooltip>
                   <button onClick={() => setViewingGrant(null)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'color 0.2s' }} onMouseOver={e => e.currentTarget.style.color = 'white'} onMouseOut={e => e.currentTarget.style.color = 'rgba(255,255,255,0.7)'}>
                     <XCircle size={28} />
                   </button>
@@ -2405,7 +2398,6 @@ const reviewKyc = (email, decision, note = '') => {
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                   <h3 style={{ color: 'var(--text-primary)', fontSize: '18px', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><Receipt size={20} /> Submitted Evidence Artifacts ({viewingGrant.proofs?.length || 0})</h3>
-                  {xrayMode && <span style={{ fontSize: '12px', color: 'var(--accent-green)', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(16,185,129,0.1)', padding: '4px 10px', borderRadius: '20px', border: '1px solid rgba(16,185,129,0.2)' }}><Eye size={14} /> DEEP SCAN ACTIVE</span>}
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -2464,21 +2456,10 @@ const reviewKyc = (email, decision, note = '') => {
 
                             return (
                               <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '200px', position: 'relative' }}>
-                                {xrayMode && !isPdf && (
-                                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(4, 15, 10, 0.9)', borderRadius: '12px', border: isFlagged ? '2px solid #ef4444' : '2px solid #10b981', padding: '12px', fontFamily: 'monospace', fontSize: '11px', color: isFlagged ? '#ef4444' : '#10b981', pointerEvents: 'none', zIndex: 10, overflow: 'hidden' }}>
-                                    <motion.div animate={{ top: ['0%', '100%'] }} transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }} style={{ position: 'absolute', left: 0, right: 0, height: '3px', background: isFlagged ? '#ef4444' : '#10b981', boxShadow: `0 0 15px ${isFlagged ? '#ef4444' : '#10b981'}` }} />
-                                    <strong style={{ borderBottom: '1px dashed', display: 'block', paddingBottom: '6px', marginBottom: '6px', color: 'white' }}>EXIF METADATA SCAN</strong>
-                                    <div style={{ color: 'rgba(255,255,255,0.6)' }}>SIG: {String(viewingGrant.currentHash || viewingGrant.id).slice(0, 10)}...</div>
-                                    <div style={{ marginTop: '8px', color: 'white' }}>EXTRACT:</div>
-                                    <div style={{ wordWrap: 'break-word', opacity: 0.9, lineHeight: '1.4', marginTop: '4px' }}>{forensic?.details}</div>
-                                    <div style={{ marginTop: 'auto', paddingTop: '8px', fontWeight: '900', fontSize: '14px', borderTop: '1px dashed', display: 'flex', alignItems: 'center', gap: '6px' }}>{isFlagged ? <><AlertTriangle size={14} /> TAMPERED SYSTEM</> : <><CheckCircle size={14} /> CLEAN SYSTEM</>}</div>
-                                  </div>
-                                )}
-
                                 {isPdf ? (
                                   <div onClick={() => setEnlargedImage(img)} style={{ width: '100%', height: '240px', background: 'var(--bg-elevated)', border: `2px solid ${borderColor}`, borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-in', transition: 'all 0.2s', color: 'var(--text-muted)' }} onMouseOver={e => { e.currentTarget.style.transform = 'scale(1.02)'; e.currentTarget.style.borderColor = 'var(--text-muted)'; }} onMouseOut={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.borderColor = borderColor; }} title="Click to view PDF Document"><FileText size={64} style={{ opacity: 0.5 }} /></div>
                                 ) : (
-                                  <img src={img} alt="" onClick={() => setEnlargedImage(img)} style={{ width: '100%', height: '240px', objectFit: 'cover', borderRadius: '12px', border: `2px solid ${borderColor}`, cursor: 'zoom-in', transition: 'transform 0.2s', filter: xrayMode ? 'contrast(1.6) brightness(0.6)' : 'none' }} onMouseOver={e => e.currentTarget.style.transform = 'scale(1.02)'} onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'} />
+                                  <img src={img} alt="" onClick={() => setEnlargedImage(img)} style={{ width: '100%', height: '240px', objectFit: 'cover', borderRadius: '12px', border: `2px solid ${borderColor}`, cursor: 'zoom-in', transition: 'transform 0.2s' }} onMouseOver={e => e.currentTarget.style.transform = 'scale(1.02)'} onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'} />
                                 )}
                                 {forensic && (
                                   <div style={{ fontSize: '11px', padding: '8px 10px', borderRadius: '8px', background: isFlagged ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)', color: isFlagged ? '#ef4444' : '#34d399', border: `1px solid ${isFlagged ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}`, lineHeight: '1.4' }}>

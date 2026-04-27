@@ -235,7 +235,6 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
   const [creditScore, setCreditScore] = useState('');
   const [type, setType] = useState('Research');
   const [customType, setCustomType] = useState('');
-  const [bypassMode, setBypassMode] = useState(false);
   const [reapplyFrom, setReapplyFrom] = useState(null);
   const [impactState, setImpactState] = useState({});
   const [editingGrant, setEditingGrant] = useState(null);
@@ -279,7 +278,7 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
 
   const applyAmountNum = parseInt(amount) || 0;
   const applyIsNegative = amount !== '' && applyAmountNum <= 0;
-  const applyExceedsLimit = !bypassMode && amount !== '' && applyAmountNum > 0 && applyAmountNum > eligibility.limit && eligibility.limit > 0;
+  const applyExceedsLimit = amount !== '' && applyAmountNum > 0 && applyAmountNum > eligibility.limit && eligibility.limit > 0;
   const applyFormValid = !!(source && amount && creditScore && !applyIsNegative && !applyExceedsLimit && (type !== 'Other' || customType));
 
   const last6 = [...myGrants].reverse().slice(-6);
@@ -371,7 +370,7 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
       return;
     }
     setAmountError('');
-    if (!bypassMode && reqAmount > eligibility.limit) return alert(`🚫 Max allowed: ₹${eligibility.limit.toLocaleString()}`);
+    if (reqAmount > eligibility.limit) return alert(`🚫 Max allowed: ₹${eligibility.limit.toLocaleString()}`);
     const finalType = type === 'Other' ? customType : type;
     axios.post(`${API}/add-grant`, { source, amount: reqAmount, type: finalType, creditScore, userId: currentUserEmail })
       .then(() => fetchGrants())
@@ -1370,33 +1369,6 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
                   ⚠️ Exceeds your credit tier limit of ₹{eligibility.limit.toLocaleString()}
                 </motion.div>
               )}
-
-              <div
-                onClick={() => setBypassMode(!bypassMode)}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '28px', padding: '14px 18px', background: 'var(--bg-warn-panel)', borderRadius: '10px', border: '1px solid var(--border-warn-panel)', cursor: 'pointer', userSelect: 'none' }}
-              >
-                <label style={{ fontSize: '14px', color: 'var(--accent-yellow)', cursor: 'pointer', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  🔓 Bypass Validation
-                </label>
-                <div style={{
-                  width: '44px', height: '24px', borderRadius: '12px', position: 'relative',
-                  background: bypassMode ? 'var(--accent-yellow)' : 'var(--bg-elevated)',
-                  border: `1px solid ${bypassMode ? 'var(--accent-yellow)' : 'var(--border-subtle)'}`,
-                  transition: 'all 0.25s ease',
-                  boxShadow: bypassMode ? '0 0 10px rgba(251,191,36,0.4)' : 'none',
-                  flexShrink: 0,
-                }}>
-                  <motion.div
-                    animate={{ x: bypassMode ? 22 : 2 }}
-                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                    style={{
-                      position: 'absolute', top: '3px',
-                      width: '16px', height: '16px', borderRadius: '50%',
-                      background: bypassMode ? 'var(--bg-base)' : 'var(--text-muted)',
-                    }}
-                  />
-                </div>
-              </div>
 
               <motion.button
                 whileHover={{ scale: applyFormValid ? 1.02 : 1, boxShadow: applyFormValid ? '0 8px 32px rgba(37,99,235,0.45)' : 'none' }}
