@@ -39,14 +39,12 @@ const formatStatus = (status) => {
     .replace(/\b\w/g, c => c.toUpperCase());
 };
 const getDisplayStatus = (grant) => {
-  const history = grant.holdHistory || [];
-  const last = history[history.length - 1];
+  const history = grant.holdDetails?.holdHistory || grant.holdHistory || [];
+  const withdrawalEvents = history.filter(h => h?.action?.includes('WITHDRAWAL'));
+  const lastWithdrawal = withdrawalEvents[withdrawalEvents.length - 1];
 
-  if (last?.action === "WITHDRAWAL_APPROVED") {
+  if (lastWithdrawal?.action === "WITHDRAWAL_APPROVED") {
     return "REQUEST_ACCEPTED";
-  }
-  if (last?.action === "WITHDRAWAL_REJECTED") {
-    return "REQUEST_REJECTED";
   }
   if (grant.withdrawalRequested) {
     return "WITHDRAWAL_REQUESTED";
@@ -54,7 +52,17 @@ const getDisplayStatus = (grant) => {
 
   return grant.status;
 };
+
+const isWithdrawalRejected = (grant) => {
+  const history = grant.holdDetails?.holdHistory || grant.holdHistory || [];
+  const withdrawalEvents = history.filter(h => h?.action?.includes('WITHDRAWAL'));
+  const lastWithdrawal = withdrawalEvents[withdrawalEvents.length - 1];
+  
+  return lastWithdrawal?.action === "WITHDRAWAL_REJECTED" && !grant.withdrawalRequested;
+};
+
 const isGrantOnHold = (grant) => grant?.status === 'ON_HOLD' || grant?.holdDetails?.isOnHold === true;
+
 const normalizeGrant = (grant) => ({
   ...grant,
   holdReason: grant?.holdReason || grant?.holdDetails?.holdReason || '',
@@ -1450,6 +1458,7 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
                       const isOnHold = isGrantOnHold(g);
                       const isWithdrawalRequested = g.withdrawalRequested === true;
                       const displayStatus = getDisplayStatus(g);
+                      const withdrawalRejected = isWithdrawalRejected(g); // 👈 ADD THIS LINE
                       const isApproved = ['Evaluated', 'Fully Disbursed', 'REQUEST_ACCEPTED'].includes(displayStatus);
                       const isRejected = ['Rejected', 'Blocked', 'WITHDRAWN', 'REQUEST_REJECTED'].includes(displayStatus);
                       const formattedStatus = formatStatus(displayStatus);
@@ -1528,6 +1537,26 @@ export default function ApplicantDashboard({ currentUser, currentUserEmail, gran
                                 )}
                               </>
                             )}
+
+                            {/* 👇 NEW WITHDRAWAL REJECTED BADGE 👇 */}
+                            {withdrawalRejected && (
+                              <div style={{
+                                marginTop: '6px',
+                                background: 'rgba(239,68,68,0.1)',
+                                border: '1px solid rgba(239,68,68,0.25)',
+                                borderRadius: '8px',
+                                padding: '6px 10px',
+                                fontSize: '11px',
+                                color: '#ef4444',
+                                fontWeight: '700',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}>
+                                ❌ Withdrawal Rejected
+                              </div>
+                            )}
+
                             {isOnHold && (
                               <div style={{
                                 marginTop: '6px',
